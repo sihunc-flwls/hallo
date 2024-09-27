@@ -111,3 +111,61 @@ class FaceLocator(ModelMixin):
         embedding = self.conv_out(embedding)
 
         return embedding
+
+
+class FaceLocator_EMO(nn.Module):
+    """
+    The Face Locator from EMO Portrait Alive. 
+    The model recieves mask as an input.
+
+    `Specifically, as shown in Figure 2, we utilize a mask M=⋃^f_{i=0}M^i as the 
+    face region, which encompasses the facial bounding box regions of the video clip.
+    We employ the Face Locator, which consists of lightweight convolutional layers 
+    designed to encode the bounding box mask. The resulting encoded mask is then 
+    added to the noisy latent representation before being fed into the Backbone. 
+    In this way, we can use the mask to control where the character face should be 
+    generated.'
+    """
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 4,
+        mid_channels: Tuple[int] = (16, 32, 64, 128),
+    ):
+        super().__init__()
+        self.conv_in = nn.Conv2d(in_channels, mid_channels[0], kernel_size=3, stride=1, padding=1)
+
+        self.blocks = nn.ModuleList([])
+
+        for i in range(len(mid_channels) - 1):
+            channel_in = mid_channels[i]
+            channel_out = mid_channels[i + 1]
+            self.blocks.append(
+                nn.Conv2d(channel_in, channel_in, kernel_size=3, stride=1, padding=1)
+            )
+            self.blocks.append(
+                nn.Conv2d(channel_in, channel_out, kernel_size=3, padding=1, stride=2)
+            )
+            
+        self.conv_out = nn.Conv2d(mid_channels[-1], out_channels, kernel_size=3, stride=1, padding=1)
+        
+    def forward(self, mask):
+        """
+        Forward pass of the FaceLocator model.
+
+        Args:
+            mask (Tensor): The input mask that indicates the face region. (b c h w)
+
+        Returns:
+            embedding (Tensor): The output mask embedding tensor. (b c h/8 w/8)
+        """
+        embedding = self.conv_in(mask)
+        embedding = F.relu(embedding)
+
+        for block in self.blocks:
+            embedding = block(embedding)
+            embedding = F.relu(embedding)
+
+        embedding = self.conv_out(embedding)
+
+        return embedding
