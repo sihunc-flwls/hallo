@@ -186,10 +186,11 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
                 "bs f margin dim -> (bs f) margin dim",
             )
         else:
-            if encoder_hidden_states.shape[0] != hidden_states.shape[0]:
-                encoder_hidden_states = repeat(
-                    encoder_hidden_states, "b n c -> (b f) n c", f=video_length
-                )
+            if encoder_hidden_states is not None:
+                if encoder_hidden_states.shape[0] != hidden_states.shape[0]:
+                    encoder_hidden_states = repeat(
+                        encoder_hidden_states, "b n c -> (b f) n c", f=video_length
+                    )
 
         batch, _, height, weight = hidden_states.shape
         residual = hidden_states
