@@ -168,4 +168,4 @@ cython_debug/
 data
 pretrained_models
 test_data
-exp_output/
+exp_output*/

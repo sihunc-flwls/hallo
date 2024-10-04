@@ -1,4 +1,4 @@
-<h1 align='center'>Hallo: Hierarchical Audio-Driven Visual Synthesis for Portrait Image Animation</h1>
+<h1 align='center'>multimodal control for audio-driven video diffusion model</h1>
 
 
 <!-- <div align='center'>
@@ -39,17 +39,24 @@
     - [ ] MLP
   - [ ] ReferenceNet
     - [x] unet: use hallo's implementation
-    - [ ] crossAttn: follow AnimateAnything - use clip image emb
+    - [x] crossAttn: follow AnimateAnything - use clip image emb
   - [x] Denoisingunet
     - [x] unet: use hallo's implementation
     - [x] RefAttn: use hallo's implementation
-    - [ ] TempModule
+    - [ ] Temporal Module
+  - [ ] training code
+    - [x] stage 1 train
+    - [x] stage 1 valid
+    - [ ] stage 2 train
+    - [ ] stage 2 valid
+    - [ ] stage 3 train
+    - [ ] stage 3 valid
 
 
-## 📸 Showcase
+<!-- ## 📸 Showcase
 
 
-https://github.com/fudan-generative-vision/hallo/assets/17402682/9d1a0de4-3470-4d38-9e4f-412f517f834c
+https://github.com/fudan-generative-vision/hallo/assets/17402682/9d1a0de4-3470-4d38-9e4f-412f517f834c -->
 
 <!-- ### 🎬 Honoring Classic Films
 
@@ -74,11 +81,11 @@ https://github.com/fudan-generative-vision/hallo/assets/17402682/9d1a0de4-3470-4
     <td style="text-align: center"><a target="_blank" href="https://cdn.aondata.work/video/short_movie/Tough_Love-480p.mp4"><img src="https://cdn.aondata.work/img/short_movie/Tough_Love_GIF.gif"></a></td>
     <td style="text-align: center"><a target="_blank" href="https://cdn.aondata.work/video/short_movie/Shawshank-480p.mp4"><img src="https://cdn.aondata.work/img/short_movie/Shawshank_GIF.gif"></a></td>
   </tr>
-</table> -->
+</table> 
 
-Explore [more examples](https://fudan-generative-vision.github.io/hallo).
+Explore [more examples](https://fudan-generative-vision.github.io/hallo). -->
 
-## 📰 News
+<!-- ## 📰 News
 
 - **`2024/06/28`**: 🎉🎉🎉 We are proud to announce the release of our model training code. Try your own training data. Here is [tutorial](#training).
 - **`2024/06/21`**: 🚀🚀🚀 Cloned a Gradio demo on [🤗Huggingface space](https://huggingface.co/spaces/fudan-generative-ai/hallo).
@@ -101,7 +108,7 @@ Explore the resources developed by our community to enhance your experience with
 
 Thanks to all of them.
 
-Join our community and explore these amazing resources to make the most out of Hallo. Enjoy and elevate their creative projects!
+Join our community and explore these amazing resources to make the most out of Hallo. Enjoy and elevate their creative projects! -->
 
 ## 🔧️ Framework
 
@@ -156,6 +163,7 @@ Or you can download them separately from their source repo:
 - [hallo](https://huggingface.co/fudan-generative-ai/hallo/tree/main/hallo): Our checkpoints consist of denoising UNet, face locator, image & audio proj.
 - [audio_separator](https://huggingface.co/huangjackson/Kim_Vocal_2): Kim\_Vocal\_2 MDX-Net vocal removal model. (_Thanks to [KimberleyJensen](https://github.com/KimberleyJensen)_)
 - [insightface](https://github.com/deepinsight/insightface/tree/master/python-package#model-zoo): 2D and 3D Face Analysis placed into `pretrained_models/face_analysis/models/`. (_Thanks to deepinsight_)
+- [image_encoder](https://huggingface.co/lambdalabs/sd-image-variations-diffusers/tree/main/image_encoder)
 - [face landmarker](https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task): Face detection & mesh model from [mediapipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker#models) placed into `pretrained_models/face_analysis/models`.
 - [motion module](https://github.com/guoyww/AnimateDiff/blob/main/README.md#202309-animatediff-v2): motion module from [AnimateDiff](https://github.com/guoyww/AnimateDiff). (_Thanks to [guoyww](https://github.com/guoyww)_).
 - [sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse): Weights are intended to be used with the diffusers library. (_Thanks to [stablilityai](https://huggingface.co/stabilityai)_)
@@ -179,6 +187,9 @@ Finally, these pretrained models should be organized as follows:
 |       |-- genderage.onnx
 |       |-- glintr100.onnx
 |       `-- scrfd_10g_bnkps.onnx
+|-- image_encoder
+|   |-- config.json
+|   `-- pytorch_model.bin
 |-- motion_module/
 |   `-- mm_sd_v15_v2.ckpt
 |-- sd-vae-ft-mse/

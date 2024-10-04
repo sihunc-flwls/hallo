@@ -23,7 +23,6 @@ import os
 import random
 import warnings
 from datetime import datetime
-from typing import List, Union
 
 import cv2
 import diffusers
@@ -40,19 +39,20 @@ from diffusers import AutoencoderKL, DDIMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version
 from diffusers.utils.import_utils import is_xformers_available
+from insightface.app import FaceAnalysis
 from omegaconf import OmegaConf
 from PIL import Image
 from torch import nn
 from tqdm.auto import tqdm
-from transformers import CLIPVisionModelWithProjection
 
-from emo.animate.face_animate_static import StaticPipeline
-from emo.datasets.mask_image import EMODataset
-from emo.models.face_locator import FaceLocator
-from emo.models.mutual_self_attention import ReferenceAttentionControl
-from emo.models.unet_2d_condition import UNet2DConditionModel
-from emo.models.unet_3d import UNet3DConditionModel
-from emo.utils.util import (compute_snr, delete_additional_ckpt,
+from hallo.animate.face_animate_static import StaticPipeline
+from hallo.datasets.mask_image import FaceMaskDataset
+from hallo.models.face_locator import FaceLocator
+from hallo.models.image_proj import ImageProjModel
+from hallo.models.mutual_self_attention import ReferenceAttentionControl
+from hallo.models.unet_2d_condition import UNet2DConditionModel
+from hallo.models.unet_3d import UNet3DConditionModel
+from hallo.utils.util import (compute_snr, delete_additional_ckpt,
                               import_filename, init_output_dir,
                               load_checkpoint, move_final_checkpoint,
                               save_checkpoint, seed_everything)
@@ -64,12 +64,6 @@ check_min_version("0.10.0.dev0")
 
 logger = get_logger(__name__, log_level="INFO")
 
-def print_cuda_mem(number):
-    print(f"{number}"+"-"*20)
-    print("torch.cuda.memory_allocated: %.4fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024), end='\t')
-    print("torch.cuda.memory_reserved: %.4fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024), end='\t')
-    print("torch.cuda.max_memory_reserved: %.4fGB"%(torch.cuda.max_memory_reserved(0)/1024/1024/1024))
-    print("-"*20)
 
 class Net(nn.Module):
     """
@@ -82,12 +76,13 @@ class Net(nn.Module):
         face_locator (FaceLocator): The face locator model used for face animation.
         reference_control_writer: The reference control writer component.
         reference_control_reader: The reference control reader component.
+        imageproj: The image projection model.
 
     Forward method:
         noisy_latents (torch.Tensor): The noisy latents tensor.
         timesteps (torch.Tensor): The timesteps tensor.
         ref_image_latents (torch.Tensor): The reference image latents tensor.
-        clip_image_emb (torch.Tensor): The clip embeddings tensor.
+        face_emb (torch.Tensor): The face embeddings tensor.
         face_mask (torch.Tensor): The face mask tensor.
         uncond_fwd (bool): A flag indicating whether to perform unconditional forward pass.
 
@@ -102,6 +97,7 @@ class Net(nn.Module):
         face_locator: FaceLocator,
         reference_control_writer: ReferenceAttentionControl,
         reference_control_reader: ReferenceAttentionControl,
+        imageproj: ImageProjModel,
     ):
         super().__init__()
         self.reference_unet = reference_unet
@@ -109,13 +105,14 @@ class Net(nn.Module):
         self.face_locator = face_locator
         self.reference_control_writer = reference_control_writer
         self.reference_control_reader = reference_control_reader
+        self.imageproj = imageproj
 
     def forward(
         self,
         noisy_latents,
         timesteps,
         ref_image_latents,
-        clip_image_emb,
+        face_emb,
         face_mask,
         uncond_fwd: bool = False,
     ):
@@ -126,13 +123,16 @@ class Net(nn.Module):
             noisy_latents (torch.Tensor): Noisy latents.
             timesteps (torch.Tensor): Timesteps.
             ref_image_latents (torch.Tensor): Reference image latents.
-            clip_image_emb (torch.Tensor): CLIP image embedding.
+            face_emb (torch.Tensor): Face embedding.
             face_mask (torch.Tensor): Face mask.
             uncond_fwd (bool, optional): Unconditional forward pass. Defaults to False.
 
         Returns:
             torch.Tensor: Model prediction.
         """
+
+        face_emb = self.imageproj(face_emb)
+        face_mask = face_mask.to(device="cuda")
         face_mask_feature = self.face_locator(face_mask)
 
         if not uncond_fwd:
@@ -140,7 +140,7 @@ class Net(nn.Module):
             self.reference_unet(
                 ref_image_latents,
                 ref_timesteps,
-                encoder_hidden_states=clip_image_emb,
+                encoder_hidden_states=face_emb,
                 return_dict=False,
             )
             self.reference_control_reader.update(self.reference_control_writer)
@@ -148,7 +148,7 @@ class Net(nn.Module):
             noisy_latents,
             timesteps,
             mask_cond_fea=face_mask_feature,
-            encoder_hidden_states=clip_image_emb,
+            encoder_hidden_states=face_emb,
         ).sample
 
         return model_pred
@@ -185,10 +185,11 @@ def log_validation(
     accelerator,
     width,
     height,
-    image_enc,
+    imageproj,
     cfg,
     save_dir,
     global_step,
+    face_analysis_model_path,
 ):
     """
     Log validation generation image.
@@ -217,14 +218,20 @@ def log_validation(
     face_locator = ori_net.face_locator
 
     generator = torch.manual_seed(42)
-    
+    image_enc = FaceAnalysis(
+        name="",
+        root=face_analysis_model_path,
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    image_enc.prepare(ctx_id=0, det_size=(640, 640))
+
     pipe = StaticPipeline(
         vae=vae,
-        image_encoder=image_enc,
         reference_unet=reference_unet,
         denoising_unet=denoising_unet,
         face_locator=face_locator,
-        scheduler=scheduler
+        scheduler=scheduler,
+        imageproj=imageproj,
     )
 
     pil_images = []
@@ -237,13 +244,23 @@ def log_validation(
         ref_image_pil = Image.open(ref_image_path).convert("RGB")
         mask_image_pil = Image.open(mask_image_path).convert("RGB")
 
+        # Prepare face embeds
+        face_info = image_enc.get(
+            cv2.cvtColor(np.array(ref_image_pil), cv2.COLOR_RGB2BGR))
+        face_info = sorted(face_info, key=lambda x: (x['bbox'][2] - x['bbox'][0]) * (
+            x['bbox'][3] - x['bbox'][1]))[-1]  # only use the maximum face
+        face_emb = torch.tensor(face_info['embedding'])
+        face_emb = face_emb.to(
+            imageproj.device, imageproj.dtype)
+
         image = pipe(
             ref_image_pil,
             mask_image_pil,
             width,
             height,
-            num_inference_steps=20,
-            guidance_scale=3.5,
+            20,
+            3.5,
+            face_emb,
             generator=generator,
         ).images
         image = image[0, :, 0].permute(1, 2, 0).cpu().numpy()  # (3, 512, 512)
@@ -261,21 +278,13 @@ def log_validation(
             save_dir, f"{global_step:06d}-{ref_name}_{mask_name}.jpg"
         )
         canvas.save(out_file)
-    
+
     del pipe
     del ori_net
     torch.cuda.empty_cache()
 
     return pil_images
 
-def cast_training_params(model: Union[torch.nn.Module, List[torch.nn.Module]], dtype=torch.float32):
-    if not isinstance(model, list):
-        model = [model]
-    for m in model:
-        for param in m.parameters():
-            # only upcast trainable parameters into fp32
-            if param.requires_grad:
-                param.data = param.to(dtype)
 
 def train_stage1_process(cfg: argparse.Namespace) -> None:
     """
@@ -343,15 +352,13 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
         )
 
     # create model
-    vae = AutoencoderKL.from_pretrained(
-        cfg.vae_model_path
-    ).to("cuda", dtype=weight_dtype)
-
+    vae = AutoencoderKL.from_pretrained(cfg.vae_model_path).to(
+        "cuda", dtype=weight_dtype
+    )
     reference_unet = UNet2DConditionModel.from_pretrained(
         cfg.base_model_path,
         subfolder="unet",
     ).to(device="cuda", dtype=weight_dtype)
-
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
         cfg.base_model_path,
         "",
@@ -362,41 +369,29 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
         },
         use_landmark=False
     ).to(device="cuda", dtype=weight_dtype)
-
-    image_enc = CLIPVisionModelWithProjection.from_pretrained(
-        cfg.image_encoder_path,
+    imageproj = ImageProjModel(
+        cross_attention_dim=denoising_unet.config.cross_attention_dim,
+        clip_embeddings_dim=512,
+        clip_extra_context_tokens=4,
     ).to(device="cuda", dtype=weight_dtype)
 
-    face_locator = FaceLocator(
-        conditioning_embedding_channels=320,
-        conditioning_channels=3,
-    ).to(device="cuda", dtype=weight_dtype)
-
-    # Freeze -----------------------------
+    if cfg.face_locator_pretrained:
+        face_locator = FaceLocator(
+            conditioning_embedding_channels=320, block_out_channels=(16, 32, 96, 256)
+        ).to(device="cuda", dtype=weight_dtype)
+        miss, _ = face_locator.load_state_dict(
+            cfg.face_state_dict_path, strict=False)
+        logger.info(f"Missing key for face locator: {len(miss)}")
+    else:
+        face_locator = FaceLocator(
+            conditioning_embedding_channels=320,
+        ).to(device="cuda", dtype=weight_dtype)
+    # Freeze
     vae.requires_grad_(False)
-    image_enc.requires_grad_(False)
-    face_locator.requires_grad_(False)
-    if False: # need to be True
-        denoising_unet.requires_grad_(True)
-        reference_unet.requires_grad_(True)
-    else: # for debuging
-        denoising_unet.requires_grad_(True)
-        reference_unet.requires_grad_(False)
-
-    # # Some top layer parames of reference_unet don't need grad
-    # for name, param in reference_unet.named_parameters():
-    #     if "up_blocks.3" in name:
-    #         param.requires_grad_(False)
-    #     else:
-    #         param.requires_grad_(True)
-
-    # Set unet trainable parameters ## for stage 2
-    # denoising_unet.requires_grad_(False)
-    # for name, param in denoising_unet.named_parameters():
-    #     for trainable_module_name in ["motion_modules"]:
-    #         if trainable_module_name in name:
-    #             param.requires_grad = True
-    #             break
+    denoising_unet.requires_grad_(True)
+    reference_unet.requires_grad_(True)
+    imageproj.requires_grad_(True)
+    face_locator.requires_grad_(True)
 
     reference_control_writer = ReferenceAttentionControl(
         reference_unet,
@@ -417,6 +412,7 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
         face_locator,
         reference_control_writer,
         reference_control_reader,
+        imageproj,
     ).to(dtype=weight_dtype)
 
     # get noise scheduler
@@ -445,10 +441,6 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
         )
     else:
         learning_rate = cfg.solver.learning_rate
-    
-    # if cfg.solver.mixed_precision == "fp16":
-    #     models = [net]
-    #     cast_training_params(models, dtype=torch.float32)
 
     # Initialize the optimizer
     if cfg.solver.use_8bit_adam:
@@ -463,11 +455,8 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     else:
         optimizer_cls = torch.optim.AdamW
 
-    # trainable_params = list(filter(lambda p: p.requires_grad, net.parameters()))
-    trainable_params = list(filter(lambda p: p.requires_grad, reference_unet.parameters())) \
-        # + list(filter(lambda p: p.requires_grad, face_locator.parameters())) \
-        # + list(filter(lambda p: p.requires_grad, imageproj.parameters()))
-    
+    trainable_params = list(
+        filter(lambda p: p.requires_grad, net.parameters()))
     optimizer = optimizer_cls(
         trainable_params,
         lr=learning_rate,
@@ -487,11 +476,10 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     )
 
     # get data loader
-    train_dataset = EMODataset(
+    train_dataset = FaceMaskDataset(
         img_size=(cfg.data.train_width, cfg.data.train_height),
         data_meta_paths=cfg.data.meta_paths,
         sample_margin=cfg.data.sample_margin,
-        use_clip=True,
     )
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset, batch_size=cfg.data.train_bs, shuffle=True, num_workers=4
@@ -556,10 +544,10 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
 
     # load checkpoint
     # Potentially load in the weights and states from a previous save
-    # if cfg.resume_from_checkpoint:
-    #     logger.info(f"Loading checkpoint from {checkpoint_dir}")
-    #     global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
-    #     first_epoch = global_step // num_update_steps_per_epoch
+    if cfg.resume_from_checkpoint:
+        logger.info(f"Loading checkpoint from {checkpoint_dir}")
+        global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
+        first_epoch = global_step // num_update_steps_per_epoch
 
        # Only show the progress bar once on each machine.
     progress_bar = tqdm(
@@ -567,7 +555,6 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
         disable=not accelerator.is_main_process,
     )
     progress_bar.set_description("Steps")
-
     net.train()
     for _ in range(first_epoch, num_train_epochs):
         train_loss = 0.0
@@ -597,23 +584,22 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                 )
                 timesteps = timesteps.long()
 
-                ## 3channel or 1channel?
-                face_mask_img = batch["tgt_mask"] # torchvision.utils.save_image(face_mask_img[0], 'my_image.png', normalize=True)
-                face_mask_img = face_mask_img.unsqueeze(2)
+                face_mask_img = batch["tgt_mask"]
+                face_mask_img = face_mask_img.unsqueeze(
+                    2)
                 face_mask_img = face_mask_img.to(weight_dtype)
 
                 uncond_fwd = random.random() < cfg.uncond_ratio
-                clip_image_list = []
+                face_emb_list = []
                 ref_image_list = []
-                for _, (ref_img, clip_img) in enumerate(
-                    zip(batch["ref_img"], batch["clip_img"])
+                for _, (ref_img, face_emb) in enumerate(
+                    zip(batch["ref_img"], batch["face_emb"])
                 ):
                     if uncond_fwd:
-                        clip_image_list.append(torch.zeros_like(clip_img))
+                        face_emb_list.append(torch.zeros_like(face_emb))
                     else:
-                        clip_image_list.append(clip_img)
-                    # torchvision.utils.save_image(ref_img[0], 'my_image.png', normalize=True)
-                    ref_image_list.append(ref_img) 
+                        face_emb_list.append(face_emb)
+                    ref_image_list.append(ref_img)
 
                 with torch.no_grad():
                     ref_img = torch.stack(ref_image_list, dim=0).to(
@@ -624,13 +610,9 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                     ).latent_dist.sample()
                     ref_image_latents = ref_image_latents * 0.18215
 
-                    clip_img = torch.cat(clip_image_list, dim=0).to(
-                        dtype=image_enc.dtype, device=image_enc.device
+                    face_emb = torch.stack(face_emb_list, dim=0).to(
+                        dtype=imageproj.dtype, device=imageproj.device
                     )
-                    clip_image_embeds = image_enc(
-                        clip_img.to("cuda", dtype=weight_dtype)
-                    ).image_embeds
-                    clip_image_embeds = clip_image_embeds.unsqueeze(1)  # (bs, 1, d)
 
                 # add noise
                 noisy_latents = train_noise_scheduler.add_noise(
@@ -649,14 +631,14 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                         f"Unknown prediction type {train_noise_scheduler.prediction_type}"
                     )
                 model_pred = net(
-                    noisy_latents, #------ [1, 4, 1, 64, 64]
-                    timesteps, #---------- [1]
-                    ref_image_latents, #-- [1, 4, 64, 64]
-                    clip_image_embeds, #-- [1, 512]
-                    face_mask_img, #------ [1, 3, 1, 512, 512]
-                    uncond_fwd, #--------- bool: True / False
+                    noisy_latents,
+                    timesteps,
+                    ref_image_latents,
+                    face_emb,
+                    face_mask_img,
+                    uncond_fwd,
                 )
-                # print_cuda_mem(7) # model_pred = net(noisy_latents,timesteps,ref_image_latents,face_emb,face_mask_img,uncond_fwd,)
+
                 if cfg.snr_gamma == 0:
                     loss = F.mse_loss(
                         model_pred.float(), target.float(), reduction="mean"
@@ -682,12 +664,10 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                     loss = loss.mean()
 
                 # Gather the losses across all processes for logging (if we use distributed training).
-                avg_loss = accelerator.gather(loss.repeat(cfg.data.train_bs)).mean()
+                avg_loss = accelerator.gather(
+                    loss.repeat(cfg.data.train_bs)).mean()
                 train_loss += avg_loss.item() / cfg.solver.gradient_accumulation_steps
 
-                ### explodes from here! begining from the second loop ----------------------------
-                # [2024-10-03 17:04:28,893] [INFO] [loss_scaler.py:183:update_scale] [deepspeed] OVERFLOW! Rank 0 Skipping step. Attempted loss scale: 2147483648, reducing to 1073741824
-                
                 # Backpropagate
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
@@ -707,16 +687,26 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
                 if global_step % cfg.checkpointing_steps == 0 or global_step == cfg.solver.max_train_steps:
+                    accelerator.wait_for_everyone()
+                    save_path = os.path.join(
+                        checkpoint_dir, f"checkpoint-{global_step}")
                     if accelerator.is_main_process:
-                        accelerator.wait_for_everyone()
-                        save_path = os.path.join(checkpoint_dir, f"checkpoint-{global_step}")
                         delete_additional_ckpt(checkpoint_dir, 3)
-                        accelerator.save_state(save_path)
-                        unwrap_net = accelerator.unwrap_model(net)
+                    accelerator.save_state(save_path)
+                    accelerator.wait_for_everyone()
+                    unwrap_net = accelerator.unwrap_model(net)
+                    if accelerator.is_main_process:
                         save_checkpoint(
                             unwrap_net.reference_unet,
                             module_dir,
                             "reference_unet",
+                            global_step,
+                            total_limit=3,
+                        )
+                        save_checkpoint(
+                            unwrap_net.imageproj,
+                            module_dir,
+                            "imageproj",
                             global_step,
                             total_limit=3,
                         )
@@ -746,10 +736,11 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                             accelerator=accelerator,
                             width=cfg.data.train_width,
                             height=cfg.data.train_height,
-                            image_enc=image_enc,
+                            imageproj=imageproj,
                             cfg=cfg,
                             save_dir=validation_dir,
                             global_step=global_step,
+                            face_analysis_model_path=cfg.face_analysis_model_path
                         )
 
             logs = {
@@ -762,6 +753,7 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                 # process final module weight for stage2
                 if accelerator.is_main_process:
                     move_final_checkpoint(save_dir, module_dir, "reference_unet")
+                    move_final_checkpoint(save_dir, module_dir, "imageproj")
                     move_final_checkpoint(save_dir, module_dir, "denoising_unet")
                     move_final_checkpoint(save_dir, module_dir, "face_locator")
                 break
@@ -769,13 +761,6 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     accelerator.wait_for_everyone()
     accelerator.end_training()
 
-def get_grad_norm(trainable_params):
-    total_norm = 0
-    for p in trainable_params:
-        param_norm = p.grad.detach().data.norm(2)
-        total_norm += param_norm.item() ** 2
-    total_norm = total_norm ** 0.5
-    return total_norm
 
 def load_config(config_path: str) -> dict:
     """
