@@ -416,7 +416,7 @@ class StaticPipeline(DiffusionPipeline):
         # denoising loop
         num_warmup_steps = len(timesteps) - \
             num_inference_steps * self.scheduler.order
-        import pdb;pdb.set_trace()
+                
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 # 1. Forward reference image
