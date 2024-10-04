@@ -1,6 +1,7 @@
 <h1 align='center'>Hallo: Hierarchical Audio-Driven Visual Synthesis for Portrait Image Animation</h1>
 
-<div align='center'>
+
+<!-- <div align='center'>
     <a href='https://github.com/xumingw' target='_blank'>Mingwang Xu</a><sup>1*</sup>&emsp;
     <a href='https://github.com/crystallee-ai' target='_blank'>Hui Li</a><sup>1*</sup>&emsp;
     <a href='https://github.com/subazinga' target='_blank'>Qingkun Su</a><sup>1*</sup>&emsp;
@@ -29,14 +30,28 @@
     <a href='assets/wechat.jpeg'><img src='https://badges.aleen42.com/src/wechat.svg'></a>
 </div>
 
-<br>
+<br> -->
+# TODOs
+- [ ] EMO implementation
+  - [x] Face locator: use hallo's implementation
+  - [ ] Speed encoder
+    - [ ] Speed bucket
+    - [ ] MLP
+  - [ ] ReferenceNet
+    - [x] unet: use hallo's implementation
+    - [ ] crossAttn: follow AnimateAnything - use clip image emb
+  - [x] Denoisingunet
+    - [x] unet: use hallo's implementation
+    - [x] RefAttn: use hallo's implementation
+    - [ ] TempModule
+
 
 ## 📸 Showcase
 
 
 https://github.com/fudan-generative-vision/hallo/assets/17402682/9d1a0de4-3470-4d38-9e4f-412f517f834c
 
-### 🎬 Honoring Classic Films
+<!-- ### 🎬 Honoring Classic Films
 
 <table class="center">
   <tr>
@@ -59,7 +74,7 @@ https://github.com/fudan-generative-vision/hallo/assets/17402682/9d1a0de4-3470-4
     <td style="text-align: center"><a target="_blank" href="https://cdn.aondata.work/video/short_movie/Tough_Love-480p.mp4"><img src="https://cdn.aondata.work/img/short_movie/Tough_Love_GIF.gif"></a></td>
     <td style="text-align: center"><a target="_blank" href="https://cdn.aondata.work/video/short_movie/Shawshank-480p.mp4"><img src="https://cdn.aondata.work/img/short_movie/Shawshank_GIF.gif"></a></td>
   </tr>
-</table>
+</table> -->
 
 Explore [more examples](https://fudan-generative-vision.github.io/hallo).
 
