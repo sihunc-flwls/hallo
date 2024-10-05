@@ -48,18 +48,19 @@ from einops import rearrange, repeat
 from omegaconf import OmegaConf
 from torch import nn
 from tqdm.auto import tqdm
+from transformers import CLIPVisionModelWithProjection
 
-from hallo.animate.face_animate import FaceAnimatePipeline
-from hallo.datasets.audio_processor import AudioProcessor
-from hallo.datasets.image_processor import ImageProcessor
-from hallo.datasets.talk_video import TalkingVideoDataset
-from hallo.models.audio_proj import AudioProjModel
-from hallo.models.face_locator import FaceLocator
-from hallo.models.image_proj import ImageProjModel
-from hallo.models.mutual_self_attention import ReferenceAttentionControl
-from hallo.models.unet_2d_condition import UNet2DConditionModel
-from hallo.models.unet_3d import UNet3DConditionModel
-from hallo.utils.util import (compute_snr, delete_additional_ckpt,
+from emo.animate.face_animate import FaceAnimatePipeline
+from emo.datasets.audio_processor import AudioProcessor
+from emo.datasets.image_processor import ImageProcessor
+from emo.datasets.talk_video import TalkingVideoDataset
+from emo.models.audio_proj import AudioProjModel
+from emo.models.face_locator import FaceLocator
+
+from emo.models.mutual_self_attention import ReferenceAttentionControl
+from emo.models.unet_2d_condition import UNet2DConditionModel
+from emo.models.unet_3d import UNet3DConditionModel
+from emo.utils.util import (compute_snr, delete_additional_ckpt,
                               import_filename, init_output_dir,
                               load_checkpoint, save_checkpoint,
                               seed_everything, tensor_to_video)
@@ -90,7 +91,7 @@ class Net(nn.Module):
         noisy_latents (torch.Tensor): The noisy latents tensor.
         timesteps (torch.Tensor): The timesteps tensor.
         ref_image_latents (torch.Tensor): The reference image latents tensor.
-        face_emb (torch.Tensor): The face embeddings tensor.
+        clip_image_emb (torch.Tensor): The face embeddings tensor.
         audio_emb (torch.Tensor): The audio embeddings tensor.
         mask (torch.Tensor): Hard face mask for face locator.
         full_mask (torch.Tensor): Pose Mask.
@@ -107,9 +108,8 @@ class Net(nn.Module):
         reference_unet: UNet2DConditionModel,
         denoising_unet: UNet3DConditionModel,
         face_locator: FaceLocator,
-        reference_control_writer,
-        reference_control_reader,
-        imageproj,
+        reference_control_writer: ReferenceAttentionControl,
+        reference_control_reader: ReferenceAttentionControl,
         audioproj,
     ):
         super().__init__()
@@ -118,7 +118,6 @@ class Net(nn.Module):
         self.face_locator = face_locator
         self.reference_control_writer = reference_control_writer
         self.reference_control_reader = reference_control_reader
-        self.imageproj = imageproj
         self.audioproj = audioproj
 
     def forward(
@@ -126,7 +125,7 @@ class Net(nn.Module):
         noisy_latents: torch.Tensor,
         timesteps: torch.Tensor,
         ref_image_latents: torch.Tensor,
-        face_emb: torch.Tensor,
+        clip_image_emb: torch.Tensor,
         audio_emb: torch.Tensor,
         mask: torch.Tensor,
         full_mask: torch.Tensor,
@@ -136,14 +135,25 @@ class Net(nn.Module):
         uncond_audio_fwd: bool = False,
     ):
         """
-        simple docstring to prevent pylint error
+        Forward pass of the model.
+        Args:
+            self (Net): The model instance.
+            noisy_latents (torch.Tensor): Noisy latents.
+            timesteps (torch.Tensor): Timesteps.
+            ref_image_latents (torch.Tensor): Reference image latents.
+            clip_image_emb (torch.Tensor): CLIP image embedding.
+            audio_emb (torch.Tensor): audio embedding.
+            mask (torch.Tensor): Face mask.
+            uncond_img_fwd (bool, optional): Unconditional forward pass for image. Defaults to False.
+            uncond_audio_fwd (bool, optional): Unconditional forward pass for audio. Defaults to False.
+
+        Returns:
+            torch.Tensor: Model prediction.
         """
-        face_emb = self.imageproj(face_emb)
-        mask = mask.to(device="cuda")
-        mask_feature = self.face_locator(mask)
-        audio_emb = audio_emb.to(
-            device=self.audioproj.device, dtype=self.audioproj.dtype)
+
         audio_emb = self.audioproj(audio_emb)
+
+        face_mask_feature = self.face_locator(mask)
 
         # condition forward
         if not uncond_img_fwd:
@@ -156,7 +166,7 @@ class Net(nn.Module):
             self.reference_unet(
                 ref_image_latents,
                 ref_timesteps,
-                encoder_hidden_states=face_emb,
+                encoder_hidden_states=clip_image_emb,
                 return_dict=False,
             )
             self.reference_control_reader.update(self.reference_control_writer)
@@ -169,8 +179,8 @@ class Net(nn.Module):
         model_pred = self.denoising_unet(
             noisy_latents,
             timesteps,
-            mask_cond_fea=mask_feature,
-            encoder_hidden_states=face_emb,
+            mask_cond_fea=face_mask_feature,
+            encoder_hidden_states=clip_image_emb,
             audio_embedding=audio_emb,
             full_mask=full_mask,
             face_mask=face_mask,
@@ -482,29 +492,33 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         )
 
     # Create Models
-    vae = AutoencoderKL.from_pretrained(cfg.vae_model_path).to(
-        "cuda", dtype=weight_dtype
-    )
+    vae = AutoencoderKL.from_pretrained(
+        cfg.vae_model_path
+    ).to("cuda", dtype=weight_dtype)
+
     reference_unet = UNet2DConditionModel.from_pretrained(
         cfg.base_model_path,
         subfolder="unet",
     ).to(device="cuda", dtype=weight_dtype)
+
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
-        cfg.base_model_path,
-        cfg.mm_path,
+        cfg.base_model_path, # pretrained_model_path
+        cfg.mm_path, # motion_module_path
         subfolder="unet",
         unet_additional_kwargs=OmegaConf.to_container(
-            cfg.unet_additional_kwargs),
+            cfg.unet_additional_kwargs
+        ),
         use_landmark=False
     ).to(device="cuda", dtype=weight_dtype)
-    imageproj = ImageProjModel(
-        cross_attention_dim=denoising_unet.config.cross_attention_dim,
-        clip_embeddings_dim=512,
-        clip_extra_context_tokens=4,
+
+    image_enc = CLIPVisionModelWithProjection.from_pretrained(
+        cfg.image_encoder_path,
     ).to(device="cuda", dtype=weight_dtype)
+
     face_locator = FaceLocator(
         conditioning_embedding_channels=320,
     ).to(device="cuda", dtype=weight_dtype)
+
     audioproj = AudioProjModel(
         seq_len=5,
         blocks=12,
@@ -513,18 +527,9 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         output_dim=768,
         context_tokens=32,
     ).to(device="cuda", dtype=weight_dtype)
-    
-    # load module weight from stage 1
-    # stage1_ckpt_dir = cfg.stage1_ckpt_dir
-    stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
 
-    # denoising_unet.load_state_dict(
-    #     torch.load(
-    #         os.path.join(stage1_ckpt_dir, "denoising_unet.pth"),
-    #         map_location="cpu",
-    #     ),
-    #     strict=False,
-    # )
+    # load module weight from stage 1
+    stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
     denoising_unet_ckpt = sorted(glob(
         os.path.join(stage1_ckpt_dir, "denoising_unet-*.pth")
     ))[-1]
@@ -532,13 +537,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         torch.load(denoising_unet_ckpt, map_location="cpu"),
         strict=False,
     )
-    # reference_unet.load_state_dict(
-    #     torch.load(
-    #         os.path.join(stage1_ckpt_dir, "reference_unet.pth"),
-    #         map_location="cpu",
-    #     ),
-    #     strict=False,
-    # )
+
     reference_unet_ckpt = sorted(glob(
         os.path.join(stage1_ckpt_dir, "reference_unet-*.pth")
     ))[-1]
@@ -547,13 +546,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         strict=False,
     )
 
-    # face_locator.load_state_dict(
-    #     torch.load(
-    #         os.path.join(stage1_ckpt_dir, "face_locator.pth"),
-    #         map_location="cpu",
-    #     ),
-    #     strict=False,
-    # )
     face_locator_ckpt = sorted(glob(
         os.path.join(stage1_ckpt_dir, "face_locator-*.pth")
     ))[-1]
@@ -561,24 +553,10 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         torch.load(face_locator_ckpt, map_location="cpu"),
         strict=False,
     )
-    # imageproj.load_state_dict(
-    #     torch.load(
-    #         os.path.join(stage1_ckpt_dir, "imageproj.pth"),
-    #         map_location="cpu",
-    #     ),
-    #     strict=False,
-    # )
-    imageproj_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "imageproj-*.pth")
-    ))[-1]
-    imageproj.load_state_dict(
-        torch.load(imageproj_ckpt, map_location="cpu"),
-        strict=False,
-    )
 
     # Freeze
     vae.requires_grad_(False)
-    imageproj.requires_grad_(False)
+    image_enc.requires_grad_(False)
     reference_unet.requires_grad_(False)
     denoising_unet.requires_grad_(False)
     face_locator.requires_grad_(False)
@@ -610,7 +588,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         face_locator,
         reference_control_writer,
         reference_control_reader,
-        imageproj,
         audioproj,
     ).to(dtype=weight_dtype)
 
@@ -654,7 +631,8 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         optimizer_cls = torch.optim.AdamW
 
     trainable_params = list(
-        filter(lambda p: p.requires_grad, net.parameters()))
+        filter(lambda p: p.requires_grad, net.parameters())
+    )
     logger.info(f"Total trainable params {len(trainable_params)}")
     optimizer = optimizer_cls(
         trainable_params,
@@ -664,7 +642,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         eps=cfg.solver.adam_epsilon,
     )
 
-    # Scheduler
+    # init scheduler
     lr_scheduler = get_scheduler(
         cfg.solver.lr_scheduler,
         optimizer=optimizer,
@@ -673,7 +651,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         num_training_steps=cfg.solver.max_train_steps
         * cfg.solver.gradient_accumulation_steps,
     )
-
     # get data loader
     train_dataset = TalkingVideoDataset(
         img_size=(cfg.data.train_width, cfg.data.train_height),
@@ -683,6 +660,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         audio_margin=cfg.data.audio_margin,
         data_meta_paths=cfg.data.train_meta_paths,
         wav2vec_cfg=cfg.wav2vec_config,
+        use_clip=True,
     )
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset, batch_size=cfg.data.train_bs, shuffle=True, num_workers=16
@@ -814,16 +792,14 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
 
                 # mask for face locator
                 pixel_values_mask = (
-                    batch["pixel_values_mask"].unsqueeze(
-                        1).to(dtype=weight_dtype)
+                    batch["pixel_values_mask"].unsqueeze(1).to(dtype=weight_dtype)
                 )
                 pixel_values_mask = repeat(
                     pixel_values_mask,
                     "b f c h w -> b (repeat f) c h w",
                     repeat=video_length,
                 )
-                pixel_values_mask = pixel_values_mask.transpose(
-                    1, 2)
+                pixel_values_mask = pixel_values_mask.transpose(1, 2)
 
                 uncond_img_fwd = random.random() < cfg.uncond_img_ratio
                 uncond_audio_fwd = random.random() < cfg.uncond_audio_ratio
@@ -845,9 +821,13 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                         ref_img_and_motion
                     ).latent_dist.sample()
                     ref_image_latents = ref_image_latents * 0.18215
-                    image_prompt_embeds = batch["face_emb"].to(
-                        dtype=imageproj.dtype, device=imageproj.device
-                    )
+                    
+                    #### TODO: make clip embedding
+                    clip_img = batch["clip_img"] #ref_img_and_motion[:,:,:224,:224]
+                    clip_image_embeds = image_enc(
+                        clip_img.to("cuda", dtype=weight_dtype)
+                    ).image_embeds
+                    clip_image_embeds = clip_image_embeds.unsqueeze(1)  # (bs, 1, d)
 
                 # add noise
                 noisy_latents = train_noise_scheduler.add_noise(
@@ -865,23 +845,25 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     raise ValueError(
                         f"Unknown prediction type {train_noise_scheduler.prediction_type}"
                     )
+                
+                # audio embedding
+                audio_emb = batch["audio_tensor"].to("cuda", dtype=weight_dtype)
 
                 # ---- Forward!!! -----
                 model_pred = net(
                     noisy_latents=noisy_latents,
                     timesteps=timesteps,
                     ref_image_latents=ref_image_latents,
-                    face_emb=image_prompt_embeds,
+                    clip_image_emb=clip_image_embeds,
+                    audio_emb=audio_emb,
                     mask=pixel_values_mask,
                     full_mask=pixel_values_full_mask,
                     face_mask=pixel_values_face_mask,
                     lip_mask=pixel_values_lip_mask,
-                    audio_emb=batch["audio_tensor"].to(
-                        dtype=weight_dtype),
                     uncond_img_fwd=uncond_img_fwd,
                     uncond_audio_fwd=uncond_audio_fwd,
                 )
-
+                import pdb;pdb.set_trace()
                 if cfg.snr_gamma == 0:
                     loss = F.mse_loss(
                         model_pred.float(),
