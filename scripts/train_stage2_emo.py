@@ -857,9 +857,9 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     clip_image_emb=clip_image_embeds,
                     audio_emb=audio_emb,
                     mask=pixel_values_mask,
-                    full_mask=pixel_values_full_mask,
-                    face_mask=pixel_values_face_mask,
-                    lip_mask=pixel_values_lip_mask,
+                    full_mask=None,
+                    face_mask=None,
+                    lip_mask=None,
                     uncond_img_fwd=uncond_img_fwd,
                     uncond_audio_fwd=uncond_audio_fwd,
                 )
@@ -920,20 +920,20 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                         generator = torch.Generator(device=accelerator.device)
                         generator.manual_seed(cfg.seed)
 
-                        log_validation(
-                            accelerator=accelerator,
-                            vae=vae,
-                            net=net,
-                            scheduler=val_noise_scheduler,
-                            width=cfg.data.train_width,
-                            height=cfg.data.train_height,
-                            clip_length=cfg.data.n_sample_frames,
-                            cfg=cfg,
-                            save_dir=validation_dir,
-                            global_step=global_step,
-                            times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
-                            face_analysis_model_path=cfg.face_analysis_model_path
-                        )
+                        # log_validation(
+                        #     accelerator=accelerator,
+                        #     vae=vae,
+                        #     net=net,
+                        #     scheduler=val_noise_scheduler,
+                        #     width=cfg.data.train_width,
+                        #     height=cfg.data.train_height,
+                        #     clip_length=cfg.data.n_sample_frames,
+                        #     cfg=cfg,
+                        #     save_dir=validation_dir,
+                        #     global_step=global_step,
+                        #     times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
+                        #     face_analysis_model_path=cfg.face_analysis_model_path
+                        # )
 
             logs = {
                 "step_loss": loss.detach().item(),

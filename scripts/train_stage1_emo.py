@@ -376,7 +376,7 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     vae.requires_grad_(False)
     image_enc.requires_grad_(False)
     face_locator.requires_grad_(False)
-    if False: # need to be True
+    if True: # need to be True
         denoising_unet.requires_grad_(True)
         reference_unet.requires_grad_(True)
     else: # for debuging
@@ -391,7 +391,6 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     #         param.requires_grad_(True)
 
     # Set unet trainable parameters ## for stage 2
-    # denoising_unet.requires_grad_(False)
     # for name, param in denoising_unet.named_parameters():
     #     for trainable_module_name in ["motion_modules"]:
     #         if trainable_module_name in name:
@@ -446,6 +445,7 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     else:
         learning_rate = cfg.solver.learning_rate
     
+    ## uncomment this when not using accelerator
     # if cfg.solver.mixed_precision == "fp16":
     #     models = [net]
     #     cast_training_params(models, dtype=torch.float32)
@@ -463,11 +463,14 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     else:
         optimizer_cls = torch.optim.AdamW
 
-    # trainable_params = list(filter(lambda p: p.requires_grad, net.parameters()))
-    trainable_params = list(filter(lambda p: p.requires_grad, reference_unet.parameters())) \
+    trainable_params = list(
+        filter(lambda p: p.requires_grad, net.parameters())
+    )
+    ## for debugging
+    # trainable_params = list(filter(lambda p: p.requires_grad, reference_unet.parameters())) \
         # + list(filter(lambda p: p.requires_grad, face_locator.parameters())) \
         # + list(filter(lambda p: p.requires_grad, imageproj.parameters()))
-    
+    logger.info(f"Total trainable params {len(trainable_params)}")
     optimizer = optimizer_cls(
         trainable_params,
         lr=learning_rate,
@@ -556,10 +559,10 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
 
     # load checkpoint
     # Potentially load in the weights and states from a previous save
-    # if cfg.resume_from_checkpoint:
-    #     logger.info(f"Loading checkpoint from {checkpoint_dir}")
-    #     global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
-    #     first_epoch = global_step // num_update_steps_per_epoch
+    if cfg.resume_from_checkpoint:
+        logger.info(f"Loading checkpoint from {checkpoint_dir}")
+        global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
+        first_epoch = global_step // num_update_steps_per_epoch
 
        # Only show the progress bar once on each machine.
     progress_bar = tqdm(
@@ -612,7 +615,6 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
                         clip_image_list.append(torch.zeros_like(clip_img))
                     else:
                         clip_image_list.append(clip_img)
-                    # torchvision.utils.save_image(ref_img[0], 'my_image.png', normalize=True)
                     ref_image_list.append(ref_img) 
 
                 with torch.no_grad():
