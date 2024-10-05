@@ -37,7 +37,7 @@
   - [ ] Speed encoder
     - [ ] Speed bucket
     - [ ] MLP
-  - [ ] ReferenceNet
+  - [x] ReferenceNet
     - [x] unet: use hallo's implementation
     - [x] crossAttn: follow AnimateAnything - use clip image emb
   - [x] Denoisingunet
@@ -47,10 +47,15 @@
   - [ ] training code
     - [x] stage 1 train
     - [x] stage 1 valid
-    - [ ] stage 2 train
+    - [x] stage 1 dataset
+    - [-] stage 2 train
+      - [x] audio module: modify the hallo's AudioTemporalBasicTransformerBlock
+      - [ ] issue: >>> attn_process None , due to grad_(False)?
     - [ ] stage 2 valid
+    - [x] stage 2 dataset
     - [ ] stage 3 train
     - [ ] stage 3 valid
+    - [ ] stage 3 dataset
 
 
 <!-- ## 📸 Showcase
