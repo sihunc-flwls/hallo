@@ -34,9 +34,9 @@
 # TODOs
 - [ ] EMO implementation
   - [x] Face locator: use hallo's implementation
-  - [ ] Speed encoder
-    - [ ] Speed bucket
-    - [ ] MLP
+  - [x] Speed encoder
+    - [-] Speed bucket: bucket value?
+    - [x] MLP
   - [x] ReferenceNet
     - [x] unet: use hallo's implementation
     - [x] crossAttn: follow AnimateAnything - use clip image emb

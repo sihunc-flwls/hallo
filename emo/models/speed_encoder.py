@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from diffusers.models.modeling_utils import ModelMixin
 
+### Code borrowed from https://github.com/johndpope/Emote-hack
 class SpeedEncoder(ModelMixin):
     def __init__(self, num_speed_buckets, speed_embedding_dim):
         super().__init__()
