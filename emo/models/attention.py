@@ -688,18 +688,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
         self.unet_block_name = unet_block_name
         self.depth = depth
 
-        zero_conv_full = nn.Conv2d(
-            dim, dim, kernel_size=1)
-        self.zero_conv_full = zero_module(zero_conv_full)
-
-        zero_conv_face = nn.Conv2d(
-            dim, dim, kernel_size=1)
-        self.zero_conv_face = zero_module(zero_conv_face)
-
-        zero_conv_lip = nn.Conv2d(
-            dim, dim, kernel_size=1)
-        self.zero_conv_lip = zero_module(zero_conv_lip)
-        # SC-Attn
+        # Self-Attn
         self.attn1 = Attention(
             query_dim=dim,
             heads=num_attention_heads,
@@ -716,53 +705,17 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
 
         # Cross-Attn
         if cross_attention_dim is not None:
-            if (stack_enable_blocks_name is not None and
-                stack_enable_blocks_depth is not None and
-                self.unet_block_name in stack_enable_blocks_name and
-                self.depth in stack_enable_blocks_depth):
-                self.attn2_0 = Attention(
-                    query_dim=dim,
-                    cross_attention_dim=cross_attention_dim,
-                    heads=num_attention_heads,
-                    dim_head=attention_head_dim,
-                    dropout=dropout,
-                    bias=attention_bias,
-                    upcast_attention=upcast_attention,
-                )
-                self.attn2_1 = Attention(
-                    query_dim=dim,
-                    cross_attention_dim=cross_attention_dim,
-                    heads=num_attention_heads,
-                    dim_head=attention_head_dim,
-                    dropout=dropout,
-                    bias=attention_bias,
-                    upcast_attention=upcast_attention,
-                )
-                self.attn2_2 = Attention(
-                    query_dim=dim,
-                    cross_attention_dim=cross_attention_dim,
-                    heads=num_attention_heads,
-                    dim_head=attention_head_dim,
-                    dropout=dropout,
-                    bias=attention_bias,
-                    upcast_attention=upcast_attention,
-                )
-                self.attn2 = None
-
-            else:
-                self.attn2 = Attention(
-                    query_dim=dim,
-                    cross_attention_dim=cross_attention_dim,
-                    heads=num_attention_heads,
-                    dim_head=attention_head_dim,
-                    dropout=dropout,
-                    bias=attention_bias,
-                    upcast_attention=upcast_attention,
-                )
-                self.attn2_0=None
+            self.attn2 = Attention(
+                query_dim=dim,
+                cross_attention_dim=cross_attention_dim,
+                heads=num_attention_heads,
+                dim_head=attention_head_dim,
+                dropout=dropout,
+                bias=attention_bias,
+                upcast_attention=upcast_attention,
+            )
         else:
             self.attn2 = None
-            self.attn2_0 = None
 
         if cross_attention_dim is not None:
             self.norm2 = (
@@ -778,7 +731,6 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
                               activation_fn=activation_fn)
         self.norm3 = nn.LayerNorm(dim)
         self.use_ada_layer_norm_zero = False
-
 
 
     def forward(
@@ -804,103 +756,53 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
             full_mask (torch.FloatTensor, optional): The full mask. Defaults to None.
             face_mask (torch.FloatTensor, optional): The face mask. Defaults to None.
             lip_mask (torch.FloatTensor, optional): The lip mask. Defaults to None.
+            motion_scale (torch.FloatTensor): A vector for scaling (deprecated)
             video_length (int, optional): The length of the video. Defaults to None.
-
         Returns:
             torch.FloatTensor: The output tensor after passing through the AudioTemporalBasicTransformerBlock.
         """
-        norm_hidden_states = (
-            self.norm1(hidden_states, timestep)
-            if self.use_ada_layer_norm
-            else self.norm1(hidden_states)
-        )
+        # norm_hidden_states = (
+        #     self.norm1(hidden_states, timestep)
+        #     if self.use_ada_layer_norm
+        #     else self.norm1(hidden_states)
+        # )
+        if self.use_ada_layer_norm:
+            norm_hidden_states = self.norm1(hidden_states, timestep)
+        else:
+            norm_hidden_states = self.norm1(hidden_states)
 
         if self.unet_use_cross_frame_attention:
-            hidden_states = (
-                self.attn1(
-                    norm_hidden_states,
-                    attention_mask=attention_mask,
-                    video_length=video_length,
-                )
-                + hidden_states
+            attn_output = self.attn1(
+                norm_hidden_states,
+                attention_mask=attention_mask,
+                video_length=video_length,
             )
         else:
-            hidden_states = (
-                self.attn1(norm_hidden_states, attention_mask=attention_mask)
-                + hidden_states
+            attn_output = self.attn1(
+                norm_hidden_states, 
+                attention_mask=attention_mask,
             )
+        hidden_states = attn_output + hidden_states
 
+        # Cross-Attention
         if self.attn2 is not None:
-            # Cross-Attention
-            norm_hidden_states = (
-                self.norm2(hidden_states, timestep)
-                if self.use_ada_layer_norm
-                else self.norm2(hidden_states)
-            )
-            hidden_states = self.attn2(
+            # norm_hidden_states = (
+            #     self.norm2(hidden_states, timestep)
+            #     if self.use_ada_layer_norm
+            #     else self.norm2(hidden_states)
+            # )
+            if self.use_ada_layer_norm:
+                norm_hidden_states = self.norm2(hidden_states, timestep)
+            else:
+                norm_hidden_states = self.norm2(hidden_states)
+
+            attn_output = self.attn2(
                 norm_hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
                 attention_mask=attention_mask,
-            ) + hidden_states
-
-        elif self.attn2_0 is not None:
-            norm_hidden_states = (
-                self.norm2(hidden_states, timestep)
-                if self.use_ada_layer_norm
-                else self.norm2(hidden_states)
             )
+            hidden_states = attn_output + hidden_states
 
-            level = self.depth
-            full_hidden_states = (
-                self.attn2_0(
-                    norm_hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    attention_mask=attention_mask,
-                ) * full_mask[level][:, :, None]
-            )
-            bz, sz, c = full_hidden_states.shape
-            sz_sqrt = int(sz ** 0.5)
-            full_hidden_states = full_hidden_states.reshape(
-                bz, sz_sqrt, sz_sqrt, c).permute(0, 3, 1, 2)
-            full_hidden_states = self.zero_conv_full(full_hidden_states).permute(0, 2, 3, 1).reshape(bz, -1, c)
-
-            face_hidden_state = (
-                self.attn2_1(
-                    norm_hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    attention_mask=attention_mask,
-                ) * face_mask[level][:, :, None]
-            )
-            face_hidden_state = face_hidden_state.reshape(
-                bz, sz_sqrt, sz_sqrt, c).permute(0, 3, 1, 2)
-            face_hidden_state = self.zero_conv_face(
-                face_hidden_state).permute(0, 2, 3, 1).reshape(bz, -1, c)
-
-            lip_hidden_state = (
-                self.attn2_2(
-                    norm_hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    attention_mask=attention_mask,
-                ) * lip_mask[level][:, :, None]
-
-            ) # [32, 4096, 320]
-            lip_hidden_state = lip_hidden_state.reshape(
-                bz, sz_sqrt, sz_sqrt, c).permute(0, 3, 1, 2)
-            lip_hidden_state = self.zero_conv_lip(
-                lip_hidden_state).permute(0, 2, 3, 1).reshape(bz, -1, c)
-
-            if motion_scale is not None:
-                hidden_states = (
-                    motion_scale[0] * full_hidden_states +
-                    motion_scale[1] * face_hidden_state +
-                    motion_scale[2] * lip_hidden_state + hidden_states
-                )
-            else:
-                hidden_states = (
-                    full_hidden_states +
-                    face_hidden_state +
-                    lip_hidden_state + hidden_states
-                )
         # Feed-forward
         hidden_states = self.ff(self.norm3(hidden_states)) + hidden_states
 
