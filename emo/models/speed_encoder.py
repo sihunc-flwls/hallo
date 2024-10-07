@@ -51,28 +51,29 @@ class SpeedEncoder(ModelMixin):
         radius = 1.0 / (3.0 * radius)
         return radius
 
-    def encode_speed(self, head_rotation_speed):
+    def encode_speed(self, head_speeds):
         """
         Args:
-            head_rotation_speed: a Scalar of frame head velocity in shape (batch_size,)
+            head_speeds: a Scalar of frame head velocity in shape (batch_size,)
         Returns:
             speed_vectors: a Tensor of speed vectors encoded with speed buckets (batch_size, num_speed_buckets**2)
         """
-        if head_rotation_speed.ndim ==1:
-            head_rotation_speed.unsqueeze(-1)
-        assert head_rotation_speed.ndim == 2, "head_rotation_speed must be in shape (batch_size, 1)"
-
         speed_vectors = torch.tanh(
-            (head_rotation_speed - self.bucket_centers) * (self.bucket_radii)
+            (head_speeds - self.bucket_centers) * (self.bucket_radii)
         )
         return speed_vectors
 
-    def forward(self, head_rotation_speed):
-        assert head_rotation_speed.ndim == 2, "head_rotation_speed must be in shape (batch_size, 1)"
-        assert head_rotation_speed.dtype == torch.float32, "head_rotation_speed must be a tensor of floats"
-
+    def forward(self, head_speeds):
+        """
+        Args:
+            head_speeds
+        Returns:
+            speed_embeddings
+        """
+        if head_speeds.shape[-1] != 1:
+            head_speeds = head_speeds.unsqueeze(-1)
         # Process the batch of head rotation speeds through the encoder
-        speed_vectors = self.encode_speed(head_rotation_speed)
+        speed_vectors = self.encode_speed(head_speeds)
 
         # Pass the encoded vectors through the MLP
         speed_embeddings = self.mlp(speed_vectors)
