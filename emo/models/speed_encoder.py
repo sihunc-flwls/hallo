@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 from diffusers.models.modeling_utils import ModelMixin
 
 ### Code borrowed from https://github.com/johndpope/Emote-hack
@@ -14,56 +15,64 @@ class SpeedEncoder(ModelMixin):
         self.num_speed_buckets = num_speed_buckets
         self.speed_embedding_dim = speed_embedding_dim
         self.bucket_centers = self.get_bucket_centers()
-        self.bucket_radii = self.get_bucket_radii()
-
-        # Ensure that the length of bucket centers and radii matches the number of speed buckets
-        assert len(self.bucket_centers) == self.num_speed_buckets, "bucket_centers length must match num_speed_buckets"
-        assert len(self.bucket_radii) == self.num_speed_buckets, "bucket_radii length must match num_speed_buckets"
+        self.bucket_radii = self.get_bucket_radius()
 
         self.mlp = nn.Sequential(
-            nn.Linear(num_speed_buckets, speed_embedding_dim),
+            nn.Linear(num_speed_buckets**2, speed_embedding_dim//2),
             nn.ReLU(),
-            nn.Linear(speed_embedding_dim, speed_embedding_dim)
+            nn.Linear(speed_embedding_dim//2, speed_embedding_dim)
         )
 
     def get_bucket_centers(self):
-        # Define the center values for each speed bucket
-        # Adjust these values based on your specific requirements
-
+        """precompute speed bucket centers
+        Returns:
+            centers: a vector of speed bucket centers
+        """
         #return [-1.0, -0.5, -0.2, -0.1, 0.0, 0.1, 0.2, 0.5, 1.0]
-        return torch.linspace(0.1, 1.0, self.num_speed_buckets)
+        centers = torch.linspace(
+            -math.pi, 
+            math.pi, 
+            self.num_speed_buckets
+        ).repeat(self.num_speed_buckets)
+        return centers
 
-    def get_bucket_radii(self):
-        # Define the radius for each speed bucket
-        # Adjust these values based on your specific requirements
-        #
+    def get_bucket_radius(self):
+        """precompute speed bucket radius
+        Returns:
+            radius: a vector of speed bucket radius
+        """
         # return [0.1] * self.num_speed_buckets
-        return torch.ones(self.num_speed_buckets) * 0.1
+        # return torch.ones(self.num_speed_buckets) * 0.1
+        radius = torch.linspace(
+            0.01, 
+            math.pi, 
+            self.num_speed_buckets
+        ).repeat_interleave(self.num_speed_buckets)
+        radius = 1.0 / (3.0 * radius)
+        return radius
 
     def encode_speed(self, head_rotation_speed):
-        # This method is now designed to handle a tensor of head rotation speeds
-        # head_rotation_speed should be a 1D tensor of shape (batch_size,)
-        assert head_rotation_speed.ndim == 1, "head_rotation_speed must be a 1D tensor"
+        """
+        Args:
+            head_rotation_speed: a Scalar of frame head velocity in shape (batch_size,)
+        Returns:
+            speed_vectors: a Tensor of speed vectors encoded with speed buckets (batch_size, num_speed_buckets**2)
+        """
+        if head_rotation_speed.ndim ==1:
+            head_rotation_speed.unsqueeze(-1)
+        assert head_rotation_speed.ndim == 2, "head_rotation_speed must be in shape (batch_size, 1)"
 
-        # Initialize a tensor to hold the encoded speed vectors
-        speed_vectors = torch.zeros((head_rotation_speed.size(0), self.num_speed_buckets), dtype=torch.float32)
-
-        for i in range(self.num_speed_buckets):
-            center = self.bucket_centers[i]
-            radius = self.bucket_radii[i]
-
-            # Element-wise operation to compute the tanh encoding for each speed value in the batch
-            speed_vectors[:, i] = torch.tanh((head_rotation_speed - center) / radius * 3)
-
+        speed_vectors = torch.tanh(
+            (head_rotation_speed - self.bucket_centers) * (self.bucket_radii)
+        )
         return speed_vectors
 
-    def forward(self, head_rotation_speeds):
-        # Ensure that head_rotation_speeds is a 1D Tensor of floats
-        assert head_rotation_speeds.ndim == 1, "head_rotation_speeds must be a 1D tensor"
-        assert head_rotation_speeds.dtype == torch.float32, "head_rotation_speeds must be a tensor of floats"
+    def forward(self, head_rotation_speed):
+        assert head_rotation_speed.ndim == 2, "head_rotation_speed must be in shape (batch_size, 1)"
+        assert head_rotation_speed.dtype == torch.float32, "head_rotation_speed must be a tensor of floats"
 
         # Process the batch of head rotation speeds through the encoder
-        speed_vectors = self.encode_speed(head_rotation_speeds)
+        speed_vectors = self.encode_speed(head_rotation_speed)
 
         # Pass the encoded vectors through the MLP
         speed_embeddings = self.mlp(speed_vectors)
