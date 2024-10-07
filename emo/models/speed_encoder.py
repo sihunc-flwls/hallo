@@ -58,9 +58,15 @@ class SpeedEncoder(ModelMixin):
         Returns:
             speed_vectors: a Tensor of speed vectors encoded with speed buckets (batch_size, num_speed_buckets**2)
         """
-        speed_vectors = torch.tanh(
-            (head_speeds - self.bucket_centers) * (self.bucket_radii)
+        b_c = self.bucket_centers.to(
+            dtype=head_speeds.dtype, 
+            device=head_speeds.device
         )
+        b_r = self.bucket_radii.to(
+            dtype=head_speeds.dtype,
+            device=head_speeds.device
+        )
+        speed_vectors = torch.tanh((head_speeds - b_c) * (b_r))
         return speed_vectors
 
     def forward(self, head_speeds):

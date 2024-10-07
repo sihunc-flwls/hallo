@@ -442,7 +442,8 @@ class ReferenceAttentionControl:
                     if isinstance(module, BasicTransformerBlock)
                 ]
 
-            assert len(reader_attn_modules) == len(writer_attn_modules)
+            #import pdb;pdb.set_trace()
+            assert len(reader_attn_modules) == len(writer_attn_modules), "len does not match!"
             reader_attn_modules = sorted(
                 reader_attn_modules, key=lambda x: -x.norm1.normalized_shape[0]
             )

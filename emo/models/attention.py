@@ -617,10 +617,182 @@ class TemporalBasicTransformerBlock(nn.Module):
 
         return hidden_states
 
-
-class AudioTemporalBasicTransformerBlock(nn.Module):
+class SpeedBasicTransformerBlock(nn.Module):
     """
-    A PyTorch module designed to handle audio data within a transformer framework, including temporal attention mechanisms.
+    A PyTorch module that extends the BasicTransformerBlock to include speed attention mechanisms.
+    This class is particularly useful for video-related tasks where capturing speed information within the sequence of frames is necessary.
+
+    Attributes:
+        dim (int): The dimension of the input and output embeddings.
+        num_attention_heads (int): The number of attention heads in the multi-head self-attention mechanism.
+        attention_head_dim (int): The dimension of each attention head.
+        dropout (float): The dropout probability for the attention scores.
+        cross_attention_dim (Optional[int]): The dimension of the cross-attention mechanism.
+        activation_fn (str): The activation function used in the feed-forward layer.
+        num_embeds_ada_norm (Optional[int]): The number of embeddings for adaptive normalization.
+        attention_bias (bool): If True, uses bias in the attention mechanism.
+        only_cross_attention (bool): If True, only uses cross-attention.
+        upcast_attention (bool): If True, upcasts the attention mechanism for better performance.
+        unet_use_cross_frame_attention (Optional[bool]): If True, uses cross-frame attention in the UNet model.
+        unet_use_temporal_attention (Optional[bool]): If True, uses temporal attention in the UNet model.
+    """
+    def __init__(
+        self,
+        dim: int,
+        num_attention_heads: int,
+        attention_head_dim: int,
+        dropout=0.0,
+        cross_attention_dim: Optional[int] = None,
+        activation_fn: str = "geglu",
+        num_embeds_ada_norm: Optional[int] = None,
+        attention_bias: bool = False,
+        only_cross_attention: bool = False,
+        upcast_attention: bool = False,
+        unet_use_cross_frame_attention=None,
+    ):
+        """
+        The TemporalBasicTransformerBlock class is a PyTorch module that extends the BasicTransformerBlock to include temporal attention mechanisms. 
+        This is particularly useful for video-related tasks, where the model needs to capture the temporal information within the sequence of frames. 
+        The block consists of self-attention, cross-attention, feed-forward, and temporal attention mechanisms.
+
+            dim (int): The dimension of the input and output embeddings.
+            num_attention_heads (int): The number of attention heads in the multi-head self-attention mechanism.
+            attention_head_dim (int): The dimension of each attention head.
+            dropout (float, optional): The dropout probability for the attention scores. Defaults to 0.0.
+            cross_attention_dim (int, optional): The dimension of the cross-attention mechanism. Defaults to None.
+            activation_fn (str, optional): The activation function used in the feed-forward layer. Defaults to "geglu".
+            num_embeds_ada_norm (int, optional): The number of embeddings for adaptive normalization. Defaults to None.
+            attention_bias (bool, optional): If True, uses bias in the attention mechanism. Defaults to False.
+            only_cross_attention (bool, optional): If True, only uses cross-attention. Defaults to False.
+            upcast_attention (bool, optional): If True, upcasts the attention mechanism for better performance. Defaults to False.
+            unet_use_cross_frame_attention (bool, optional): If True, uses cross-frame attention in the UNet model. Defaults to None.
+
+        Forward method:
+            hidden_states (torch.FloatTensor): The input hidden states.
+            encoder_hidden_states (torch.FloatTensor, optional): The encoder hidden states. Defaults to None.
+            timestep (torch.LongTensor, optional): The current timestep for the transformer model. Defaults to None.
+            attention_mask (torch.FloatTensor, optional): The attention mask for the self-attention mechanism. Defaults to None.
+            video_length (int, optional): The length of the video sequence. Defaults to None.
+
+        Returns:
+            torch.FloatTensor: The output hidden states after passing through the TemporalBasicTransformerBlock.
+        """
+        super().__init__()
+        self.only_cross_attention = only_cross_attention
+        self.use_ada_layer_norm = num_embeds_ada_norm is not None
+        self.unet_use_cross_frame_attention = unet_use_cross_frame_attention
+
+        # SC-Attn
+        self.attn1 = Attention(
+            query_dim=dim,
+            heads=num_attention_heads,
+            dim_head=attention_head_dim,
+            dropout=dropout,
+            bias=attention_bias,
+            upcast_attention=upcast_attention,
+        )
+        self.norm1 = (
+            AdaLayerNorm(dim, num_embeds_ada_norm)
+            if self.use_ada_layer_norm
+            else nn.LayerNorm(dim)
+        )
+
+        # Cross-Attn
+        if cross_attention_dim is not None:
+            self.attn2 = Attention(
+                query_dim=dim,
+                cross_attention_dim=cross_attention_dim,
+                heads=num_attention_heads,
+                dim_head=attention_head_dim,
+                dropout=dropout,
+                bias=attention_bias,
+                upcast_attention=upcast_attention,
+            )
+        else:
+            self.attn2 = None
+
+        if cross_attention_dim is not None:
+            self.norm2 = (
+                AdaLayerNorm(dim, num_embeds_ada_norm)
+                if self.use_ada_layer_norm
+                else nn.LayerNorm(dim)
+            )
+        else:
+            self.norm2 = None
+
+        # Feed-forward
+        self.ff = FeedForward(dim, dropout=dropout,
+                              activation_fn=activation_fn)
+        self.norm3 = nn.LayerNorm(dim)
+        self.use_ada_layer_norm_zero = False
+
+
+    def forward(
+        self,
+        hidden_states,
+        encoder_hidden_states=None,
+        timestep=None,
+        attention_mask=None,
+        video_length=None,
+    ):
+        """
+        Forward pass for the TemporalBasicTransformerBlock.
+
+        Args:
+            hidden_states (torch.FloatTensor): The input hidden states with shape (batch_size, seq_len, dim).
+            encoder_hidden_states (torch.FloatTensor, optional): The encoder hidden states with shape (batch_size, src_seq_len, dim).
+            timestep (torch.LongTensor, optional): The timestep for the transformer block.
+            attention_mask (torch.FloatTensor, optional): The attention mask with shape (batch_size, seq_len, seq_len).
+            video_length (int, optional): The length of the video sequence.
+
+        Returns:
+            torch.FloatTensor: The output tensor after passing through the transformer block with shape (batch_size, seq_len, dim).
+        """
+        norm_hidden_states = (
+            self.norm1(hidden_states, timestep)
+            if self.use_ada_layer_norm
+            else self.norm1(hidden_states)
+        )
+
+        if self.unet_use_cross_frame_attention:
+            hidden_states = (
+                self.attn1(
+                    norm_hidden_states,
+                    attention_mask=attention_mask,
+                    video_length=video_length,
+                )
+                + hidden_states
+            )
+        else:
+            hidden_states = (
+                self.attn1(norm_hidden_states, attention_mask=attention_mask)
+                + hidden_states
+            )
+
+        if self.attn2 is not None:
+            # Cross-Attention
+            norm_hidden_states = (
+                self.norm2(hidden_states, timestep)
+                if self.use_ada_layer_norm
+                else self.norm2(hidden_states)
+            )
+            hidden_states = (
+                self.attn2(
+                    norm_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    attention_mask=attention_mask,
+                )
+                + hidden_states
+            )
+
+        # Feed-forward
+        hidden_states = self.ff(self.norm3(hidden_states)) + hidden_states
+
+        return hidden_states
+
+class AudioBasicTransformerBlock(nn.Module):
+    """
+    A PyTorch module designed to handle audio data within a transformer framework
 
     Attributes:
         dim (int): The dimension of the input and output embeddings.
@@ -634,7 +806,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
         only_cross_attention (bool): If True, only uses cross-attention.
         upcast_attention (bool): If True, upcasts the attention mechanism to float32.
         unet_use_cross_frame_attention (Optional[bool]): If True, uses cross-frame attention in UNet.
-        unet_use_temporal_attention (Optional[bool]): If True, uses temporal attention in UNet.
+        unet_use_temporal_attention (Optional[bool]): **NOTE: not used argument
         depth (int): The depth of the transformer block.
         unet_block_name (Optional[str]): The name of the UNet block.
         stack_enable_blocks_name (Optional[List[str]]): The list of enabled blocks in the stack.
@@ -660,7 +832,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
         stack_enable_blocks_depth: Optional[List[int]] = None,
     ):  
         """
-        Initializes the AudioTemporalBasicTransformerBlock module.
+        Initializes the AudioBasicTransformerBlock module.
 
         Args:
            dim (int): The dimension of the input and output embeddings.
@@ -674,7 +846,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
            only_cross_attention (bool, optional): If True, only uses cross-attention. Defaults to False.
            upcast_attention (bool, optional): If True, upcasts the attention mechanism to float32. Defaults to False.
            unet_use_cross_frame_attention (Optional[bool], optional): If True, uses cross-frame attention in UNet. Defaults to None.
-           unet_use_temporal_attention (Optional[bool], optional): If True, uses temporal attention in UNet. Defaults to None.
+           unet_use_temporal_attention (Optional[bool], optional): **NOTE: Not used argument
            depth (int, optional): The depth of the transformer block. Defaults to 0.
            unet_block_name (Optional[str], optional): The name of the UNet block. Defaults to None.
            stack_enable_blocks_name (Optional[List[str]], optional): The list of enabled blocks in the stack. Defaults to None.
@@ -746,7 +918,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
         video_length=None,
     ):
         """
-        Forward pass for the AudioTemporalBasicTransformerBlock.
+        Forward pass for the AudioBasicTransformerBlock.
 
         Args:
             hidden_states (torch.FloatTensor): The input hidden states.
@@ -759,7 +931,7 @@ class AudioTemporalBasicTransformerBlock(nn.Module):
             motion_scale (torch.FloatTensor): A vector for scaling (deprecated)
             video_length (int, optional): The length of the video. Defaults to None.
         Returns:
-            torch.FloatTensor: The output tensor after passing through the AudioTemporalBasicTransformerBlock.
+            torch.FloatTensor: The output tensor after passing through the AudioBasicTransformerBlock.
         """
         # norm_hidden_states = (
         #     self.norm1(hidden_states, timestep)

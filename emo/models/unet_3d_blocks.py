@@ -52,6 +52,8 @@ def get_down_block(
     depth=0,
     stack_enable_blocks_name=None,
     stack_enable_blocks_depth=None,
+    use_speed_module=None,
+    speed_attention_dim=None,
 ):
     """
     Factory function to instantiate a down-block module for the 3D UNet architecture.
@@ -130,6 +132,8 @@ def get_down_block(
             depth=depth,
             stack_enable_blocks_name=stack_enable_blocks_name,
             stack_enable_blocks_depth=stack_enable_blocks_depth,
+            use_speed_module=use_speed_module,
+            speed_attention_dim=speed_attention_dim,
         )
     raise ValueError(f"{down_block_type} does not exist.")
 
@@ -163,6 +167,8 @@ def get_up_block(
     depth=0,
     stack_enable_blocks_name=None,
     stack_enable_blocks_depth=None,
+    use_speed_module=None,
+    speed_attention_dim=None,
 ):
     """
     Factory function to instantiate an up-block module for the 3D UNet architecture.
@@ -240,6 +246,8 @@ def get_up_block(
             depth=depth,
             stack_enable_blocks_name=stack_enable_blocks_name,
             stack_enable_blocks_depth=stack_enable_blocks_depth,
+            use_speed_module=use_speed_module,
+            speed_attention_dim=speed_attention_dim,
         )
     raise ValueError(f"{up_block_type} does not exist.")
 
@@ -308,6 +316,8 @@ class UNetMidBlock3DCrossAttn(nn.Module):
         depth=0,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        use_speed_module=None,
+        speed_attention_dim=768,
     ):
         super().__init__()
 
@@ -336,6 +346,7 @@ class UNetMidBlock3DCrossAttn(nn.Module):
         attentions = []
         motion_modules = []
         audio_modules = []
+        speed_modules = []
 
         for _ in range(num_layers):
             if dual_cross_attention:
@@ -374,6 +385,26 @@ class UNetMidBlock3DCrossAttn(nn.Module):
                 else None
             )
 
+            speed_modules.append(
+                Transformer3DModel(
+                    attn_num_head_channels,
+                    in_channels // attn_num_head_channels,
+                    in_channels=in_channels,
+                    num_layers=1,
+                    cross_attention_dim=speed_attention_dim,
+                    norm_num_groups=resnet_groups,
+                    use_linear_projection=use_linear_projection,
+                    upcast_attention=upcast_attention,
+                    use_speed_module=use_speed_module,
+                    depth=depth,
+                    unet_block_name="mid",
+                    stack_enable_blocks_name=stack_enable_blocks_name,
+                    stack_enable_blocks_depth=stack_enable_blocks_depth,
+                )
+                if use_speed_module
+                else None
+            )
+
             motion_modules.append(
                 get_motion_module(
                     in_channels=in_channels,
@@ -403,6 +434,7 @@ class UNetMidBlock3DCrossAttn(nn.Module):
         self.resnets = nn.ModuleList(resnets)
         self.audio_modules = nn.ModuleList(audio_modules)
         self.motion_modules = nn.ModuleList(motion_modules)
+        self.speed_modules = nn.ModuleList(speed_modules)
 
     def forward(
         self,
@@ -414,6 +446,7 @@ class UNetMidBlock3DCrossAttn(nn.Module):
         face_mask=None,
         lip_mask=None,
         audio_embedding=None,
+        speed_embedding=None,
         motion_scale=None,
     ):
         """
@@ -429,13 +462,14 @@ class UNetMidBlock3DCrossAttn(nn.Module):
             face_mask (Tensor, optional): The face mask tensor. Defaults to None.
             lip_mask (Tensor, optional): The lip mask tensor. Defaults to None.
             audio_embedding (Tensor, optional): The audio embedding tensor. Defaults to None.
+            speed_embedding (Tensor, optional): The speed embedding tensor. Defaults to None.
 
         Returns:
             Tensor: The output tensor after passing through the UNetMidBlock3DCrossAttn layers.
         """
         hidden_states = self.resnets[0](hidden_states, temb)
-        for attn, resnet, audio_module, motion_module in zip(
-            self.attentions, self.resnets[1:], self.audio_modules, self.motion_modules
+        for attn, resnet, audio_module, speed_module, motion_module in zip(
+            self.attentions, self.resnets[1:], self.audio_modules, self.speed_modules, self.motion_modules
         ):
             hidden_states, motion_frame = attn(
                 hidden_states,
@@ -470,6 +504,16 @@ class UNetMidBlock3DCrossAttn(nn.Module):
                         full_mask=full_mask,
                         face_mask=face_mask,
                         lip_mask=lip_mask,
+                        motion_scale=motion_scale,
+                        return_dict=False,
+                    )
+                )[0]  # .sample
+            if speed_module is not None:
+                hidden_states = (
+                    speed_module(
+                        hidden_states,
+                        encoder_hidden_states=speed_embedding,
+                        attention_mask=attention_mask,
                         motion_scale=motion_scale,
                         return_dict=False,
                     )
@@ -538,11 +582,14 @@ class CrossAttnDownBlock3D(nn.Module):
         depth=0,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        use_speed_module=None,
+        speed_attention_dim=None,
     ):
         super().__init__()
         resnets = []
         attentions = []
         audio_modules = []
+        speed_modules = []
         motion_modules = []
 
         self.has_cross_attention = True
@@ -582,7 +629,7 @@ class CrossAttnDownBlock3D(nn.Module):
                     unet_use_temporal_attention=unet_use_temporal_attention,
                 )
             )
-            # TODO:检查维度
+            # TODO:check dimensions
             audio_modules.append(
                 Transformer3DModel(
                     attn_num_head_channels,
@@ -603,6 +650,28 @@ class CrossAttnDownBlock3D(nn.Module):
                 if use_audio_module
                 else None
             )
+
+            speed_modules.append(
+                Transformer3DModel(
+                    attn_num_head_channels,
+                    out_channels // attn_num_head_channels,
+                    in_channels=out_channels,
+                    num_layers=1,
+                    cross_attention_dim=speed_attention_dim,
+                    norm_num_groups=resnet_groups,
+                    use_linear_projection=use_linear_projection,
+                    only_cross_attention=only_cross_attention,
+                    upcast_attention=upcast_attention,
+                    use_speed_module=use_speed_module,
+                    depth=depth,
+                    unet_block_name="down",
+                    stack_enable_blocks_name=stack_enable_blocks_name,
+                    stack_enable_blocks_depth=stack_enable_blocks_depth,
+                )
+                if use_speed_module
+                else None
+            )
+            
             motion_modules.append(
                 get_motion_module(
                     in_channels=out_channels,
@@ -617,6 +686,7 @@ class CrossAttnDownBlock3D(nn.Module):
         self.resnets = nn.ModuleList(resnets)
         self.audio_modules = nn.ModuleList(audio_modules)
         self.motion_modules = nn.ModuleList(motion_modules)
+        self.speed_modules = nn.ModuleList(speed_modules)
 
         if add_downsample:
             self.downsamplers = nn.ModuleList(
@@ -645,6 +715,7 @@ class CrossAttnDownBlock3D(nn.Module):
         face_mask=None,
         lip_mask=None,
         audio_embedding=None,
+        speed_embedding=None,
         motion_scale=None,
     ):
         """
@@ -667,6 +738,8 @@ class CrossAttnDownBlock3D(nn.Module):
             The lip mask for the cross-attention mechanism.
         audio_embedding : torch.Tensor, optional
             The audio embedding for the cross-attention mechanism.
+        speed_embedding : torch.Tensor, optional
+            The speed embedding for the cross-attention mechanism.
 
         Returns:
         --     torch.Tensor
@@ -674,8 +747,8 @@ class CrossAttnDownBlock3D(nn.Module):
         """
         output_states = ()
 
-        for _, (resnet, attn, audio_module, motion_module) in enumerate(
-            zip(self.resnets, self.attentions, self.audio_modules, self.motion_modules)
+        for _, (resnet, attn, audio_module, speed_modules, motion_module) in enumerate(
+            zip(self.resnets, self.attentions, self.audio_modules, self.speed_modules, self.motion_modules)
         ):
             # self.gradient_checkpointing = False
             if self.training and self.gradient_checkpointing:
@@ -732,6 +805,16 @@ class CrossAttnDownBlock3D(nn.Module):
                         motion_scale,
                     )[0]
 
+                if speed_modules is not None:
+                    # audio_embedding = audio_embedding
+                    hidden_states = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(speed_modules, return_dict=False),
+                        hidden_states,
+                        speed_embedding,
+                        attention_mask,
+                        motion_scale,
+                    )[0]
+
                 # add motion module
                 if motion_module is not None:
                     motion_frames = motion_frames.to(
@@ -763,6 +846,15 @@ class CrossAttnDownBlock3D(nn.Module):
                         lip_mask=lip_mask,
                         return_dict=False,
                     )[0]
+                
+                if speed_modules is not None:
+                    hidden_states = speed_modules(
+                        hidden_states,
+                        speed_embedding,
+                        attention_mask=attention_mask,
+                        return_dict=False,
+                    )[0]
+
                 # add motion module
                 if motion_module is not None:
                     hidden_states = motion_module(
@@ -998,11 +1090,14 @@ class CrossAttnUpBlock3D(nn.Module):
         depth=0,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        use_speed_module=None,
+        speed_attention_dim=None,
     ):
         super().__init__()
         resnets = []
         attentions = []
         audio_modules = []
+        speed_modules = []
         motion_modules = []
 
         self.has_cross_attention = True
@@ -1065,6 +1160,26 @@ class CrossAttnUpBlock3D(nn.Module):
                 if use_audio_module
                 else None
             )
+            speed_modules.append(
+                Transformer3DModel(
+                    attn_num_head_channels,
+                    out_channels // attn_num_head_channels,
+                    in_channels=out_channels,
+                    num_layers=1,
+                    cross_attention_dim=speed_attention_dim,
+                    norm_num_groups=resnet_groups,
+                    use_linear_projection=use_linear_projection,
+                    only_cross_attention=only_cross_attention,
+                    upcast_attention=upcast_attention,
+                    use_speed_module=use_speed_module,
+                    depth=depth,
+                    unet_block_name="up",
+                    stack_enable_blocks_name=stack_enable_blocks_name,
+                    stack_enable_blocks_depth=stack_enable_blocks_depth,
+                )
+                if use_speed_module
+                else None
+            )
             motion_modules.append(
                 get_motion_module(
                     in_channels=out_channels,
@@ -1078,6 +1193,7 @@ class CrossAttnUpBlock3D(nn.Module):
         self.attentions = nn.ModuleList(attentions)
         self.resnets = nn.ModuleList(resnets)
         self.audio_modules = nn.ModuleList(audio_modules)
+        self.speed_modules = nn.ModuleList(speed_modules)
         self.motion_modules = nn.ModuleList(motion_modules)
 
         if add_upsample:
@@ -1101,6 +1217,7 @@ class CrossAttnUpBlock3D(nn.Module):
         face_mask=None,
         lip_mask=None,
         audio_embedding=None,
+        speed_embedding=None,
         motion_scale=None,
     ):
         """
@@ -1118,12 +1235,13 @@ class CrossAttnUpBlock3D(nn.Module):
             face_mask (Tensor, optional): The face mask tensor. Defaults to None.
             lip_mask (Tensor, optional): The lip mask tensor. Defaults to None.
             audio_embedding (Tensor, optional): The audio embedding tensor. Defaults to None.
+            speed_embedding (Tensor, optional): The speed embedding tensor. Defaults to None.
 
         Returns:
             Tensor: The output tensor after passing through the CrossAttnUpBlock3D.
         """
-        for _, (resnet, attn, audio_module, motion_module) in enumerate(
-            zip(self.resnets, self.attentions, self.audio_modules, self.motion_modules)
+        for _, (resnet, attn, audio_module, speed_module, motion_module) in enumerate(
+            zip(self.resnets, self.attentions, self.audio_modules, self.speed_modules, self.motion_modules)
         ):
             # pop res hidden states
             res_hidden_states = res_hidden_states_tuple[-1]
@@ -1183,6 +1301,19 @@ class CrossAttnUpBlock3D(nn.Module):
                         motion_scale,
                     )[0]
 
+                if speed_module is not None:
+                    # audio_embedding = audio_embedding
+                    hidden_states = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(speed_module, return_dict=False),
+                        hidden_states,
+                        speed_embedding,
+                        attention_mask,
+                        full_mask,
+                        face_mask,
+                        lip_mask,
+                        motion_scale,
+                    )[0]
+
                 # add motion module
                 if motion_module is not None:
                     motion_frames = motion_frames.to(
@@ -1208,7 +1339,6 @@ class CrossAttnUpBlock3D(nn.Module):
                 ).sample
 
                 if audio_module is not None:
-
                     hidden_states = (
                         audio_module(
                             hidden_states,
@@ -1219,6 +1349,16 @@ class CrossAttnUpBlock3D(nn.Module):
                             lip_mask=lip_mask,
                         )
                     ).sample
+
+                if speed_module is not None:
+                    hidden_states = (
+                        speed_module(
+                            hidden_states,
+                            encoder_hidden_states=speed_embedding,
+                            attention_mask=attention_mask,
+                        )
+                    ).sample
+
                 # add motion module
                 hidden_states = (
                     motion_module(

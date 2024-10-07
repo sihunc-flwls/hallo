@@ -169,6 +169,9 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         audio_attention_dim=768,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        # speed 
+        use_speed_module=False,
+        speed_attention_dim=768,
     ):
         super().__init__()
 
@@ -250,6 +253,8 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
                 depth=i,
                 stack_enable_blocks_name=stack_enable_blocks_name,
                 stack_enable_blocks_depth=stack_enable_blocks_depth,
+                use_speed_module=use_speed_module,
+                speed_attention_dim=speed_attention_dim,
             )
             self.down_blocks.append(down_block)
 
@@ -519,6 +524,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         full_mask: Optional[torch.Tensor] = None,
         face_mask: Optional[torch.Tensor] = None,
         lip_mask: Optional[torch.Tensor] = None,
+        speed_embedding: Optional[torch.Tensor] = None,
         motion_scale: Optional[torch.Tensor] = None,
         down_block_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
         mid_block_additional_residual: Optional[torch.Tensor] = None,
@@ -620,6 +626,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
                     face_mask=face_mask,
                     lip_mask=lip_mask,
                     audio_embedding=audio_embedding,
+                    speed_embedding=speed_embedding,
                     motion_scale=motion_scale,
                 )
                 # print("")
@@ -657,6 +664,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
             face_mask=face_mask,
             lip_mask=lip_mask,
             audio_embedding=audio_embedding,
+            speed_embedding=speed_embedding,
             motion_scale=motion_scale,
         )
 
@@ -692,6 +700,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
                     face_mask=face_mask,
                     lip_mask=lip_mask,
                     audio_embedding=audio_embedding,
+                    speed_embedding=speed_embedding,
                     motion_scale=motion_scale,
                 )
             else:

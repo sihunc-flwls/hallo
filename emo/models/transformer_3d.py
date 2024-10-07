@@ -18,8 +18,11 @@ from diffusers.utils import BaseOutput
 from einops import rearrange, repeat
 from torch import nn
 
-from .attention import (AudioTemporalBasicTransformerBlock,
-                        TemporalBasicTransformerBlock)
+from .attention import (
+    SpeedBasicTransformerBlock,
+    AudioBasicTransformerBlock,
+    TemporalBasicTransformerBlock
+)
 
 
 @dataclass
@@ -62,6 +65,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         unet_use_cross_frame_attention=None,
         unet_use_temporal_attention=None,
         use_audio_module=False,
+        use_speed_module=False,
         depth=0,
         unet_block_name=None,
         stack_enable_blocks_name = None,
@@ -73,6 +77,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         self.attention_head_dim = attention_head_dim
         inner_dim = num_attention_heads * attention_head_dim
         self.use_audio_module = use_audio_module
+        self.use_speed_module = use_speed_module
         # Define input layers
         self.in_channels = in_channels
 
@@ -89,7 +94,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         if use_audio_module:
             self.transformer_blocks = nn.ModuleList(
                 [
-                    AudioTemporalBasicTransformerBlock(
+                    AudioBasicTransformerBlock(
                         inner_dim,
                         num_attention_heads,
                         attention_head_dim,
@@ -106,6 +111,25 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
                         unet_block_name=unet_block_name,
                         stack_enable_blocks_name=stack_enable_blocks_name,
                         stack_enable_blocks_depth=stack_enable_blocks_depth,
+                    )
+                    for d in range(num_layers)
+                ]
+            )
+        elif use_speed_module:
+            # Define transformers blocks
+            self.transformer_blocks = nn.ModuleList(
+                [
+                    SpeedBasicTransformerBlock(
+                        inner_dim,
+                        num_attention_heads,
+                        attention_head_dim,
+                        dropout=dropout,
+                        cross_attention_dim=cross_attention_dim,
+                        activation_fn=activation_fn,
+                        num_embeds_ada_norm=num_embeds_ada_norm,
+                        attention_bias=attention_bias,
+                        only_cross_attention=only_cross_attention,
+                        upcast_attention=upcast_attention,
                     )
                     for d in range(num_layers)
                 ]
@@ -161,7 +185,8 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
 
         Args:
             hidden_states (torch.Tensor): The input hidden states.
-            encoder_hidden_states (torch.Tensor, optional): The input encoder hidden states.
+            encoder_hidden_states (torch.Tensor, optional): 
+                The input encoder hidden states.
             attention_mask (torch.Tensor, optional): The attention mask.
             full_mask (torch.Tensor, optional): The full mask.
             face_mask (torch.Tensor, optional): The face mask.
@@ -220,7 +245,16 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
                     video_length=video_length,
                 )
                 motion_frames.append(motion_frame_fea)
+            elif isinstance(block, SpeedBasicTransformerBlock):
+                hidden_states = block(
+                    hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    attention_mask=attention_mask,
+                    timestep=timestep,
+                    video_length=video_length,
+                )
             else:
+                # audio
                 hidden_states = block(
                     hidden_states,  # shape [2, 4096, 320]
                     encoder_hidden_states=encoder_hidden_states,  # shape [2, 20, 640]
