@@ -302,6 +302,8 @@ class TalkingVideoDataset(Dataset):
                 [pixel_values_ref_img, pixel_values_motion], dim=0
             )
 
+        dummy_head_speed =  torch.randn(pixel_values_vid.shape[0])
+        
         sample = {
             "video_dir": video_path,
             "pixel_values_vid": pixel_values_vid,
@@ -311,6 +313,7 @@ class TalkingVideoDataset(Dataset):
             # "pixel_values_full_mask": pixel_values_full_mask,
             "audio_tensor": audio_tensor,
             "pixel_values_ref_img": pixel_values_ref_img,
+            "head_speed": dummy_head_speed
             # "face_emb": face_emb,
         }
         if self.use_clip:
