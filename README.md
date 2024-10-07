@@ -35,7 +35,7 @@
 - [ ] EMO implementation
   - [x] Face locator: use hallo's implementation
   - [x] Speed encoder
-    - [-] Speed bucket: bucket value?
+    - [x] Speed bucket: bucket value (center & radius ?) -> set to PI 
     - [x] MLP
   - [x] ReferenceNet
     - [x] unet: use hallo's implementation
@@ -44,11 +44,18 @@
     - [x] unet: use hallo's implementation
     - [x] RefAttn: use hallo's implementation
     - [ ] Temporal Module
+      - [x] Speed-CrsAttn (before the temporal layer)
+        - [x] down block
+        - [x] mid block
+        - [x] up block
+      - [ ] Temporal layer
   - [ ] training code
+    - [ ] data - add clip feature extractor
+    - [ ] data - head speed extractor
     - [x] stage 1 train
     - [x] stage 1 valid
     - [x] stage 1 dataset
-    - [-] stage 2 train
+    - [ ] stage 2 train
       - [x] audio module: modify the hallo's AudioTemporalBasicTransformerBlock
       - [ ] issue: >>> attn_process None , due to grad_(False)?
     - [ ] stage 2 valid
