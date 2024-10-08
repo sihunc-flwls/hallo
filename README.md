@@ -1,5 +1,6 @@
 <h1 align='center'>multimodal control for audio-driven video diffusion model</h1>
 
+Implementation for diffusion based audio-driven talking head generation methods
 
 <!-- <div align='center'>
     <a href='https://github.com/xumingw' target='_blank'>Mingwang Xu</a><sup>1*</sup>&emsp;
@@ -33,7 +34,7 @@
 <br> -->
 # TODOs
 - [ ] EMO implementation
-  - [x] Face locator: use hallo's implementation
+  - [x] Face locator: use hallo's implementation (uses 3-channel mask)
   - [x] Speed encoder
     - [x] Speed bucket: bucket value (center & radius ?) -> set to PI 
     - [x] MLP
@@ -43,12 +44,11 @@
   - [x] Denoisingunet
     - [x] unet: use hallo's implementation
     - [x] RefAttn: use hallo's implementation
-    - [ ] Temporal Module
+    - [x] Temporal Module: use hallo's implementation (identical to EMO)
       - [x] Speed-CrsAttn (before the temporal layer)
         - [x] down block
         - [x] mid block
         - [x] up block
-      - [ ] Temporal layer
   - [ ] training code
     - [ ] data - add clip feature extractor
     - [ ] data - head speed extractor
@@ -60,7 +60,7 @@
       - [ ] issue: >>> attn_process None , due to grad_(False)?
     - [ ] stage 2 valid
     - [x] stage 2 dataset
-    - [ ] stage 3 train
+    - [x] stage 3 train
     - [ ] stage 3 valid
     - [ ] stage 3 dataset
 
@@ -124,11 +124,14 @@ Join our community and explore these amazing resources to make the most out of H
 
 ## 🔧️ Framework
 
-![abstract](assets/framework_1.jpg)
-![framework](assets/framework_2.jpg)
+<!-- ![abstract](assets/framework_1.jpg) -->
+### Hallo
+![framework](assets/framework.jpg)
+### EMO: Emote Portrait Alive
+![emoframework](assets/emo_pipeline.png)
 
 ## ⚙️ Installation
-
+environment setting based on [hallo](https://github.com/fudan-generative-vision/hallo)
 - System requirement: Ubuntu 20.04/Ubuntu 22.04, Cuda 12.1
 - Tested GPUs: A100
 
