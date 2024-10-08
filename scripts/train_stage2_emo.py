@@ -128,9 +128,6 @@ class Net(nn.Module):
         clip_image_emb: torch.Tensor,
         audio_emb: torch.Tensor,
         mask: torch.Tensor,
-        full_mask: torch.Tensor,
-        face_mask: torch.Tensor,
-        lip_mask: torch.Tensor,
         uncond_img_fwd: bool = False,
         uncond_audio_fwd: bool = False,
     ):
@@ -154,7 +151,6 @@ class Net(nn.Module):
         audio_emb = self.audioproj(audio_emb)
 
         face_mask_feature = self.face_locator(mask)
-
         # condition forward
         if not uncond_img_fwd:
             ref_timesteps = torch.zeros_like(timesteps)
@@ -182,9 +178,6 @@ class Net(nn.Module):
             mask_cond_fea=face_mask_feature,
             encoder_hidden_states=clip_image_emb,
             audio_embedding=audio_emb,
-            full_mask=full_mask,
-            face_mask=face_mask,
-            lip_mask=lip_mask
         ).sample
 
         return model_pred
@@ -503,7 +496,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
 
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
         cfg.base_model_path, # pretrained_model_path
-        cfg.mm_path, # motion_module_path
+        cfg.mm_path, # motion_module_path == temporal module
         subfolder="unet",
         unet_additional_kwargs=OmegaConf.to_container(
             cfg.unet_additional_kwargs
@@ -522,7 +515,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     audioproj = AudioProjModel(
         seq_len=5,
         blocks=12,
-        channels=768,
+        channels=768, # wav2vec feat dim
         intermediate_dim=512,
         output_dim=768,
         context_tokens=32,
@@ -749,18 +742,18 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                 # Convert videos to latent space
                 pixel_values_vid = batch["pixel_values_vid"].to(weight_dtype)
 
-                pixel_values_face_mask = batch["pixel_values_face_mask"]
-                pixel_values_face_mask = get_attention_mask(
-                    pixel_values_face_mask, weight_dtype
-                )
-                pixel_values_lip_mask = batch["pixel_values_lip_mask"]
-                pixel_values_lip_mask = get_attention_mask(
-                    pixel_values_lip_mask, weight_dtype
-                )
-                pixel_values_full_mask = batch["pixel_values_full_mask"]
-                pixel_values_full_mask = get_attention_mask(
-                    pixel_values_full_mask, weight_dtype
-                )
+                # pixel_values_face_mask = batch["pixel_values_face_mask"]
+                # pixel_values_face_mask = get_attention_mask(
+                #     pixel_values_face_mask, weight_dtype
+                # )
+                # pixel_values_lip_mask = batch["pixel_values_lip_mask"]
+                # pixel_values_lip_mask = get_attention_mask(
+                #     pixel_values_lip_mask, weight_dtype
+                # )
+                # pixel_values_full_mask = batch["pixel_values_full_mask"]
+                # pixel_values_full_mask = get_attention_mask(
+                #     pixel_values_full_mask, weight_dtype
+                # )
 
                 with torch.no_grad():
                     video_length = pixel_values_vid.shape[1]
@@ -857,13 +850,10 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     clip_image_emb=clip_image_embeds,
                     audio_emb=audio_emb,
                     mask=pixel_values_mask,
-                    full_mask=None,
-                    face_mask=None,
-                    lip_mask=None,
                     uncond_img_fwd=uncond_img_fwd,
                     uncond_audio_fwd=uncond_audio_fwd,
                 )
-                import pdb;pdb.set_trace()
+                #import pdb;pdb.set_trace()
                 if cfg.snr_gamma == 0:
                     loss = F.mse_loss(
                         model_pred.float(),
