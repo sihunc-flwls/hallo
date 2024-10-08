@@ -171,7 +171,6 @@ class Net(nn.Module):
                 encoder_hidden_states=clip_image_emb,
                 return_dict=False,
             )
-            import pdb;pdb.set_trace() ####### attention module lenght mismatch
             self.reference_control_reader.update(self.reference_control_writer)
 
         if uncond_audio_fwd:
