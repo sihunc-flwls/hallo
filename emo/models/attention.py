@@ -680,22 +680,22 @@ class SpeedBasicTransformerBlock(nn.Module):
         super().__init__()
         self.only_cross_attention = only_cross_attention
         self.use_ada_layer_norm = num_embeds_ada_norm is not None
-        self.unet_use_cross_frame_attention = unet_use_cross_frame_attention
+        # self.unet_use_cross_frame_attention = unet_use_cross_frame_attention
 
-        # SC-Attn
-        self.attn1 = Attention(
-            query_dim=dim,
-            heads=num_attention_heads,
-            dim_head=attention_head_dim,
-            dropout=dropout,
-            bias=attention_bias,
-            upcast_attention=upcast_attention,
-        )
-        self.norm1 = (
-            AdaLayerNorm(dim, num_embeds_ada_norm)
-            if self.use_ada_layer_norm
-            else nn.LayerNorm(dim)
-        )
+        # # SC-Attn
+        # self.attn1 = Attention(
+        #     query_dim=dim,
+        #     heads=num_attention_heads,
+        #     dim_head=attention_head_dim,
+        #     dropout=dropout,
+        #     bias=attention_bias,
+        #     upcast_attention=upcast_attention,
+        # )
+        # self.norm1 = (
+        #     AdaLayerNorm(dim, num_embeds_ada_norm)
+        #     if self.use_ada_layer_norm
+        #     else nn.LayerNorm(dim)
+        # )
 
         # Cross-Attn
         if cross_attention_dim is not None:
@@ -748,26 +748,26 @@ class SpeedBasicTransformerBlock(nn.Module):
         Returns:
             torch.FloatTensor: The output tensor after passing through the transformer block with shape (batch_size, seq_len, dim).
         """
-        norm_hidden_states = (
-            self.norm1(hidden_states, timestep)
-            if self.use_ada_layer_norm
-            else self.norm1(hidden_states)
-        )
+        # norm_hidden_states = (
+        #     self.norm1(hidden_states, timestep)
+        #     if self.use_ada_layer_norm
+        #     else self.norm1(hidden_states)
+        # )
 
-        if self.unet_use_cross_frame_attention:
-            hidden_states = (
-                self.attn1(
-                    norm_hidden_states,
-                    attention_mask=attention_mask,
-                    video_length=video_length,
-                )
-                + hidden_states
-            )
-        else:
-            hidden_states = (
-                self.attn1(norm_hidden_states, attention_mask=attention_mask)
-                + hidden_states
-            )
+        # if self.unet_use_cross_frame_attention:
+        #     hidden_states = (
+        #         self.attn1(
+        #             norm_hidden_states,
+        #             attention_mask=attention_mask,
+        #             video_length=video_length,
+        #         )
+        #         + hidden_states
+        #     )
+        # else:
+        #     hidden_states = (
+        #         self.attn1(norm_hidden_states, attention_mask=attention_mask)
+        #         + hidden_states
+        #     )
 
         if self.attn2 is not None:
             # Cross-Attention
