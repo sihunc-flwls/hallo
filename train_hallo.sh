@@ -1,4 +1,4 @@
-echo "stage1 w/ deepspeed"
+echo "Hallo stage1 w/ deepspeed"
 accelerate launch -m \
   --config_file accelerate_config.yaml \
   --machine_rank 0 \
@@ -6,9 +6,9 @@ accelerate launch -m \
   --main_process_port 20055 \
   --num_machines 1 \
   --num_processes 1 \
-  scripts.train_stage1_emo --config ./configs/train/stage1.yaml
+  scripts.train_stage1_emo --config ./configs/train/hallo/stage1.yaml
 
-echo "stage2 w/ deepspeed"
+echo "Hallo stage2 w/ deepspeed"
 accelerate launch -m \
   --config_file accelerate_config.yaml \
   --machine_rank 0 \
@@ -16,4 +16,4 @@ accelerate launch -m \
   --main_process_port 20055 \
   --num_machines 1 \
   --num_processes 1 \
-  scripts.train_stage2_hallo --config ./configs/train/stage2.yaml
+  scripts.train_stage2_hallo --config ./configs/train/hallo/stage2.yaml

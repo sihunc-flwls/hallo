@@ -1,5 +1,5 @@
 data:
-  train_bs: 4
+  train_bs: 1
   val_bs: 1
   train_width: 512
   train_height: 512
@@ -9,7 +9,8 @@ data:
   n_sample_frames: 14
   audio_margin: 2
   train_meta_paths:
-    - "./data/hdtf_split_stage2.json"
+    # - "./data/hdtf_split_stage2.json"
+    - "./data/toydata_stage2.json"
 
 wav2vec_config:
   audio_type: "vocals" # audio vocals
@@ -89,6 +90,7 @@ base_model_path: "./pretrained_models/stable-diffusion-v1-5/"
 vae_model_path: "./pretrained_models/sd-vae-ft-mse"
 face_analysis_model_path: "./pretrained_models/face_analysis"
 mm_path: "./pretrained_models/motion_module/mm_sd_v15_v2.ckpt"
+image_encoder_path: "./pretrained_models/image_encoder"
 
 weight_dtype: "fp16" # [fp16, fp32]
 uncond_img_ratio: 0.05

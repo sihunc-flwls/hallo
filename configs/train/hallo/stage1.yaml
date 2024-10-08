@@ -1,15 +1,18 @@
 data:
-  train_bs: 8
+  train_bs: 1
   train_width: 512
   train_height: 512
   meta_paths:
-    - "./data/HDTF_meta.json"
+    # - "./data/toy128_stage1.json"
+    # - "./data/toy256_stage1.json"
+    - "./data/toydata_stage1.json"
+    #- "./data/HDTF_meta.json"
   # Margin of frame indexes between ref and tgt images
   sample_margin: 30
 
 solver:
   gradient_accumulation_steps: 1
-  mixed_precision: "no"
+  mixed_precision: "fp16"
   enable_xformers_memory_efficient_attention: True
   gradient_checkpointing: False
   max_train_steps: 30000
