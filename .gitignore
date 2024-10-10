@@ -168,3 +168,14 @@ cython_debug/
 data
 pretrained_models
 test_data
+
+exp_output*/
+_*.npy
+_*.png
+_*.yaml
+*.mp4
+scripts/train_stage1.py
+scripts/train_stage2.py
+*toy.py
+
+scripts/scripts_aniportrait/
