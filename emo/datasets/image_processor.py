@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from insightface.app import FaceAnalysis
 from PIL import Image
+from transformers import CLIPImageProcessor
 from torchvision import transforms
 
 from ..utils.util import (blur_mask, get_landmark_overframes, get_mask,
@@ -75,27 +76,6 @@ class ImageProcessor:
                 transforms.ToTensor(),
             ]
         )
-        self.attn_transform_32 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 16, self.img_size[0] // 16)),
-                transforms.ToTensor(),
-            ]
-        )
-        self.attn_transform_16 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 32, self.img_size[0] // 32)),
-                transforms.ToTensor(),
-            ]
-        )
-        self.attn_transform_8 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 64, self.img_size[0] // 64)),
-                transforms.ToTensor(),
-            ]
-        )
 
         self.face_analysis = FaceAnalysis(
             name="",
@@ -103,6 +83,8 @@ class ImageProcessor:
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         self.face_analysis.prepare(ctx_id=0, det_size=(640, 640))
+        
+        self.clip_image_processor = CLIPImageProcessor()
 
     def preprocess(self, source_image_path: str, cache_dir: str, face_region_ratio: float):
         """
@@ -119,6 +101,9 @@ class ImageProcessor:
         ref_image_pil = source_image.convert("RGB")
         # 1. image augmentation
         pixel_values_ref_img = self._augmentation(ref_image_pil, self.pixel_transform)
+
+        # 1.1 image CLIP feature
+        clip_img = self.clip_image_processor(ref_image_pil, return_tensors='pt').pixel_values
 
         # 2.1 detect face
         faces = self.face_analysis.get(cv2.cvtColor(np.array(ref_image_pil.copy()), cv2.COLOR_RGB2BGR))
@@ -145,41 +130,7 @@ class ImageProcessor:
 
         face_mask = self._augmentation(face_mask_pil, self.cond_transform)
 
-        # 2.4 detect and expand lip, face mask
-        sep_background_mask = Image.open(
-            os.path.join(cache_dir, f"{file_name}_sep_background.png"))
-        sep_face_mask = Image.open(
-            os.path.join(cache_dir, f"{file_name}_sep_face.png"))
-        sep_lip_mask = Image.open(
-            os.path.join(cache_dir, f"{file_name}_sep_lip.png"))
-
-        pixel_values_face_mask = [
-            self._augmentation(sep_face_mask, self.attn_transform_64),
-            self._augmentation(sep_face_mask, self.attn_transform_32),
-            self._augmentation(sep_face_mask, self.attn_transform_16),
-            self._augmentation(sep_face_mask, self.attn_transform_8),
-        ]
-        pixel_values_lip_mask = [
-            self._augmentation(sep_lip_mask, self.attn_transform_64),
-            self._augmentation(sep_lip_mask, self.attn_transform_32),
-            self._augmentation(sep_lip_mask, self.attn_transform_16),
-            self._augmentation(sep_lip_mask, self.attn_transform_8),
-        ]
-        pixel_values_full_mask = [
-            self._augmentation(sep_background_mask, self.attn_transform_64),
-            self._augmentation(sep_background_mask, self.attn_transform_32),
-            self._augmentation(sep_background_mask, self.attn_transform_16),
-            self._augmentation(sep_background_mask, self.attn_transform_8),
-        ]
-
-        pixel_values_full_mask = [mask.view(1, -1)
-                                  for mask in pixel_values_full_mask]
-        pixel_values_face_mask = [mask.view(1, -1)
-                                  for mask in pixel_values_face_mask]
-        pixel_values_lip_mask = [mask.view(1, -1)
-                                 for mask in pixel_values_lip_mask]
-
-        return pixel_values_ref_img, face_mask, face_emb, pixel_values_full_mask, pixel_values_face_mask, pixel_values_lip_mask
+        return pixel_values_ref_img, face_mask, face_emb, clip_img
 
     def close(self):
         """
@@ -261,6 +212,7 @@ class ImageProcessorForDataProcessing():
             )
             self.landmarker = FaceLandmarker.create_from_options(options)
             self.face_analysis = None
+        self.clip_image_processor = CLIPImageProcessor()
 
     def preprocess(self, source_image_path: str):
         """
@@ -273,13 +225,23 @@ class ImageProcessorForDataProcessing():
         Returns:
             None
         """
+        i = 0
+        clip_img = None
+
         # 1. get face embdeding
-        face_mask, face_emb, sep_pose_mask, sep_face_mask, sep_lip_mask = None, None, None, None, None
+        face_mask, face_emb = None, None
         if self.face_analysis:
             for frame in sorted(os.listdir(source_image_path)):
                 try:
                     source_image = Image.open(
                         os.path.join(source_image_path, frame))
+                    
+                    # 1.1 image CLIP feature
+                    if i == 0:
+                        clip_img = self.clip_image_processor(
+                            ref_image_pil, return_tensors='pt').pixel_values
+                        i += 1
+
                     ref_image_pil = source_image.convert("RGB")
                     # 2.1 detect face
                     faces = self.face_analysis.get(cv2.cvtColor(
@@ -302,18 +264,19 @@ class ImageProcessorForDataProcessing():
 
             # 3 render face and lip mask
             face_mask = get_union_face_mask(landmarks, height, width)
-            lip_mask = get_union_lip_mask(landmarks, height, width)
+            # lip_mask = get_union_lip_mask(landmarks, height, width)
 
-            # 4 gaussian blur
-            blur_face_mask = blur_mask(face_mask, (64, 64), (51, 51))
-            blur_lip_mask = blur_mask(lip_mask, (64, 64), (31, 31))
+            # # 4 gaussian blur
+            # blur_face_mask = blur_mask(face_mask, (64, 64), (51, 51))
+            # blur_lip_mask = blur_mask(lip_mask, (64, 64), (31, 31))
 
-            # 5 seperate mask
-            sep_face_mask = cv2.subtract(blur_face_mask, blur_lip_mask)
-            sep_pose_mask = 255.0 - blur_face_mask
-            sep_lip_mask = blur_lip_mask
+            # # 5 seperate mask
+            # sep_face_mask = cv2.subtract(blur_face_mask, blur_lip_mask)
+            # sep_pose_mask = 255.0 - blur_face_mask
+            # sep_lip_mask = blur_lip_mask
 
-        return face_mask, face_emb, sep_pose_mask, sep_face_mask, sep_lip_mask
+        # return face_mask, face_emb, sep_pose_mask, sep_face_mask, sep_lip_mask
+        return face_mask, face_emb, clip_img
 
     def close(self):
         """

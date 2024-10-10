@@ -145,34 +145,6 @@ class TalkingVideoDataset(Dataset):
                 transforms.ToTensor(),
             ]
         )
-        self.attn_transform_64 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 8, self.img_size[0] // 8)),
-                transforms.ToTensor(),
-            ]
-        )
-        self.attn_transform_32 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 16, self.img_size[0] // 16)),
-                transforms.ToTensor(),
-            ]
-        )
-        self.attn_transform_16 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 32, self.img_size[0] // 32)),
-                transforms.ToTensor(),
-            ]
-        )
-        self.attn_transform_8 = transforms.Compose(
-            [
-                transforms.Resize(
-                    (self.img_size[0] // 64, self.img_size[0] // 64)),
-                transforms.ToTensor(),
-            ]
-        )
         self.use_clip = use_clip
         self.clip_image_processor = CLIPImageProcessor()
 
@@ -206,10 +178,6 @@ class TalkingVideoDataset(Dataset):
         video_meta = self.vid_meta[index]
         video_path = video_meta["video_path"]
         mask_path = video_meta["mask_path"]
-        # lip_mask_union_path = video_meta.get("sep_mask_lip", None)
-        # face_mask_union_path = video_meta.get("sep_mask_face", None)
-        # full_mask_union_path = video_meta.get("sep_mask_border", None)
-        # face_emb_path = video_meta["face_emb_path"]
         audio_emb_path = video_meta[
             f"{self.audio_type}_emb_{self.audio_model}_{self.audio_features}"
         ]
@@ -233,14 +201,6 @@ class TalkingVideoDataset(Dataset):
         frame_list = [
             Image.fromarray(video).convert("RGB") for video in videos.asnumpy()
         ]
-
-        # face_masks_list = [Image.open(face_mask_union_path)] * self.n_sample_frames
-        # lip_masks_list = [Image.open(lip_mask_union_path)] * self.n_sample_frames
-        # full_masks_list = [Image.open(full_mask_union_path)] * self.n_sample_frames
-        # assert face_masks_list[0] is not None, "Fail to load face mask."
-        # assert lip_masks_list[0] is not None, "Fail to load lip mask."
-        # assert full_masks_list[0] is not None, "Fail to load full mask."
-
 
         # face_emb = torch.load(face_emb_path)
         audio_emb = torch.load(audio_emb_path)
@@ -273,25 +233,6 @@ class TalkingVideoDataset(Dataset):
         pixel_values_mask = self.augmentation(tgt_mask_pil, self.cond_transform, state)
         pixel_values_mask = pixel_values_mask.repeat(3, 1, 1)
 
-        # pixel_values_face_mask = [
-        #     self.augmentation(face_masks_list, self.attn_transform_64, state),
-        #     self.augmentation(face_masks_list, self.attn_transform_32, state),
-        #     self.augmentation(face_masks_list, self.attn_transform_16, state),
-        #     self.augmentation(face_masks_list, self.attn_transform_8, state),
-        # ]
-        # pixel_values_lip_mask = [
-        #     self.augmentation(lip_masks_list, self.attn_transform_64, state),
-        #     self.augmentation(lip_masks_list, self.attn_transform_32, state),
-        #     self.augmentation(lip_masks_list, self.attn_transform_16, state),
-        #     self.augmentation(lip_masks_list, self.attn_transform_8, state),
-        # ]
-        # pixel_values_full_mask = [
-        #     self.augmentation(full_masks_list, self.attn_transform_64, state),
-        #     self.augmentation(full_masks_list, self.attn_transform_32, state),
-        #     self.augmentation(full_masks_list, self.attn_transform_16, state),
-        #     self.augmentation(full_masks_list, self.attn_transform_8, state),
-        # ]
-
         pixel_values_ref_img = self.augmentation(ref_img, self.pixel_transform, state)
         pixel_values_ref_img = pixel_values_ref_img.unsqueeze(0)
         if self.n_motion_frames > 0:
@@ -302,15 +243,12 @@ class TalkingVideoDataset(Dataset):
                 [pixel_values_ref_img, pixel_values_motion], dim=0
             )
 
-        dummy_head_speed =  torch.randn(pixel_values_vid.shape[0])
+        dummy_head_speed = torch.randn(pixel_values_vid.shape[0])
         
         sample = {
             "video_dir": video_path,
             "pixel_values_vid": pixel_values_vid,
             "pixel_values_mask": pixel_values_mask,
-            # "pixel_values_face_mask": pixel_values_face_mask,
-            # "pixel_values_lip_mask": pixel_values_lip_mask,
-            # "pixel_values_full_mask": pixel_values_full_mask,
             "audio_tensor": audio_tensor,
             "pixel_values_ref_img": pixel_values_ref_img,
             "head_speed": dummy_head_speed
