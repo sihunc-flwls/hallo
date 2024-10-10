@@ -86,10 +86,10 @@ class StaticPipeline(DiffusionPipeline):
     def __init__(
         self,
         vae,
-        image_encoder,
         reference_unet,
         denoising_unet,
         face_locator,
+        image_encoder,
         scheduler: Union[
             DDIMScheduler,
             PNDMScheduler,
@@ -103,11 +103,11 @@ class StaticPipeline(DiffusionPipeline):
 
         self.register_modules(
             vae=vae,
-            image_encoder=image_encoder,
             reference_unet=reference_unet,
             denoising_unet=denoising_unet,
             face_locator=face_locator,
             scheduler=scheduler,
+            image_encoder=image_encoder,
         )
         self.vae_scale_factor = 2 ** (
             len(self.vae.config.block_out_channels) - 1)
@@ -335,7 +335,9 @@ class StaticPipeline(DiffusionPipeline):
 
         device = self._execution_device
 
-        do_classifier_free_guidance = guidance_scale > 1.0
+        #do_classifier_free_guidance = guidance_scale > 1.0
+        do_classifier_free_guidance = False
+
         # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
         timesteps = self.scheduler.timesteps
@@ -346,12 +348,14 @@ class StaticPipeline(DiffusionPipeline):
         clip_image = self.clip_image_processor.preprocess(
             ref_image.resize((224, 224)), return_tensors="pt"
         ).pixel_values
-        clip_image_embeds = self.image_encoder(
-            clip_image.to(device, dtype=self.image_encoder.dtype)
-        ).image_embeds
-        image_prompt_embeds = clip_image_embeds.unsqueeze(1)
+        clip_image_embeds = clip_image.to(device, dtype=self.image_encoder.dtype)
         
-        uncond_image_prompt_embeds = torch.zeros_like(image_prompt_embeds)
+        image_prompt_embeds = self.image_encoder(
+            clip_image_embeds
+        ).image_embeds.unsqueeze(0)
+        uncond_image_prompt_embeds = self.image_encoder(
+            torch.zeros_like(clip_image_embeds)
+        ).image_embeds.unsqueeze(0)
 
         if do_classifier_free_guidance:
             image_prompt_embeds = torch.cat(

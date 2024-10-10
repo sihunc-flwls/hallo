@@ -93,7 +93,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         reference_unet,
         denoising_unet,
         face_locator,
-        image_proj,
+        image_encoder,
         scheduler: Union[
             DDIMScheduler,
             PNDMScheduler,
@@ -102,17 +102,28 @@ class FaceAnimatePipeline(DiffusionPipeline):
             EulerAncestralDiscreteScheduler,
             DPMSolverMultistepScheduler,
         ],
+        speed_encoder=None,
     ) -> None:
         super().__init__()
-
-        self.register_modules(
-            vae=vae,
-            reference_unet=reference_unet,
-            denoising_unet=denoising_unet,
-            face_locator=face_locator,
-            scheduler=scheduler,
-            image_proj=image_proj,
-        )
+        if speed_encoder is None:
+            self.register_modules(
+                vae=vae,
+                reference_unet=reference_unet,
+                denoising_unet=denoising_unet,
+                face_locator=face_locator,
+                scheduler=scheduler,
+                image_encoder=image_encoder,
+            )
+        else:
+            self.register_modules(
+                vae=vae,
+                reference_unet=reference_unet,
+                denoising_unet=denoising_unet,
+                face_locator=face_locator,
+                scheduler=scheduler,
+                image_encoder=image_encoder,
+                speed_encoder=speed_encoder,
+            )
 
         self.vae_scale_factor: int = 2 ** (len(self.vae.config.block_out_channels) - 1)
 
@@ -253,9 +264,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         face_emb,
         audio_tensor,
         face_mask,
-        pixel_values_full_mask,
-        pixel_values_face_mask,
-        pixel_values_lip_mask,
+        clip_img,
         width,
         height,
         video_length,
@@ -263,6 +272,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         guidance_scale,
         num_images_per_prompt=1,
         eta: float = 0.0,
+        speed_emb: Optional[torch.Tensor] = None,
         motion_scale: Optional[List[torch.Tensor]] = None,
         generator: Optional[Union[torch.Generator,
                                   List[torch.Generator]]] = None,
@@ -280,6 +290,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         device = self._execution_device
 
         do_classifier_free_guidance = guidance_scale > 1.0
+        # do_classifier_free_guidance = False
 
         # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -288,14 +299,22 @@ class FaceAnimatePipeline(DiffusionPipeline):
         batch_size = 1
 
         # prepare clip image embeddings
-        clip_image_embeds = face_emb
-        clip_image_embeds = clip_image_embeds.to(self.image_proj.device, self.image_proj.dtype)
-
-        encoder_hidden_states = self.image_proj(clip_image_embeds)
-        uncond_encoder_hidden_states = self.image_proj(torch.zeros_like(clip_image_embeds))
+        clip_image_embeds = clip_img.to(self.image_encoder.device, self.image_encoder.dtype)
+        encoder_hidden_states = self.image_encoder(
+            clip_image_embeds
+        ).image_embeds.unsqueeze(0)
+        uncond_encoder_hidden_states = self.image_encoder(
+            torch.zeros_like(clip_image_embeds)
+        ).image_embeds.unsqueeze(0)
+        # clip_image_embeds = face_emb
+        # clip_image_embeds = clip_image_embeds.to(self.image_proj.device, self.image_proj.dtype)
+        # encoder_hidden_states = self.image_proj(clip_image_embeds)
+        # uncond_encoder_hidden_states = self.image_proj(torch.zeros_like(clip_image_embeds))
 
         if do_classifier_free_guidance:
-            encoder_hidden_states = torch.cat([uncond_encoder_hidden_states, encoder_hidden_states], dim=0)
+            encoder_hidden_states = torch.cat(
+                [uncond_encoder_hidden_states, encoder_hidden_states], dim=0
+            )
 
         reference_control_writer = ReferenceAttentionControl(
             self.reference_unet,
@@ -342,46 +361,22 @@ class FaceAnimatePipeline(DiffusionPipeline):
         face_mask = self.face_locator(face_mask)
         face_mask = torch.cat([torch.zeros_like(face_mask), face_mask], dim=0) if do_classifier_free_guidance else face_mask
 
-        pixel_values_full_mask = (
-            [torch.cat([mask] * 2) for mask in pixel_values_full_mask]
-            if do_classifier_free_guidance
-            else pixel_values_full_mask
-        )
-        pixel_values_face_mask = (
-            [torch.cat([mask] * 2) for mask in pixel_values_face_mask]
-            if do_classifier_free_guidance
-            else pixel_values_face_mask
-        )
-        pixel_values_lip_mask = (
-            [torch.cat([mask] * 2) for mask in pixel_values_lip_mask]
-            if do_classifier_free_guidance
-            else pixel_values_lip_mask
-        )
-        pixel_values_face_mask_ = []
-        for mask in pixel_values_face_mask:
-            pixel_values_face_mask_.append(
-                mask.to(device=self.denoising_unet.device, dtype=self.denoising_unet.dtype))
-        pixel_values_face_mask = pixel_values_face_mask_
-        pixel_values_lip_mask_ = []
-        for mask in pixel_values_lip_mask:
-            pixel_values_lip_mask_.append(
-                mask.to(device=self.denoising_unet.device, dtype=self.denoising_unet.dtype))
-        pixel_values_lip_mask = pixel_values_lip_mask_
-        pixel_values_full_mask_ = []
-        for mask in pixel_values_full_mask:
-            pixel_values_full_mask_.append(
-                mask.to(device=self.denoising_unet.device, dtype=self.denoising_unet.dtype))
-        pixel_values_full_mask = pixel_values_full_mask_
-
-
         uncond_audio_tensor = torch.zeros_like(audio_tensor)
         audio_tensor = torch.cat([uncond_audio_tensor, audio_tensor], dim=0)
         audio_tensor = audio_tensor.to(dtype=self.denoising_unet.dtype, device=self.denoising_unet.device)
+
+        if self.speed_encoder is not None:
+            if speed_emb is None:
+                speed_emb = torch.ones(
+                    audio_tensor.shape[0]
+                ).to(dtype=self.speed_encoder.dtype, device=self.speed_encoder.device)
+            speed_emb = self.speed_encoder(speed_emb)
 
         # denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
+                # import pdb;pdb.set_trace()
                 # Forward reference image
                 if i == 0:
                     self.reference_unet(
@@ -393,6 +388,13 @@ class FaceAnimatePipeline(DiffusionPipeline):
                         return_dict=False,
                     )
                     reference_control_reader.update(reference_control_writer)
+                
+                # encoder_hidden_states :: [2, 4, 768]
+                # ref_image_latents.shape :: [3, 4, 64, 64]
+                # ref_image_latents.repeat :: [6, 4, 64, 64]
+                # latents :: [1, 4, 14, 64, 64]
+                # audio_tensor :: [2, 14, 32, 768]
+                # import pdb;pdb.set_trace()
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
@@ -403,11 +405,8 @@ class FaceAnimatePipeline(DiffusionPipeline):
                     t,
                     encoder_hidden_states=encoder_hidden_states,
                     mask_cond_fea=face_mask,
-                    full_mask=pixel_values_full_mask,
-                    face_mask=pixel_values_face_mask,
-                    lip_mask=pixel_values_lip_mask,
                     audio_embedding=audio_tensor,
-                    motion_scale=motion_scale,
+                    speed_embedding=speed_emb,
                     return_dict=False,
                 )[0]
 
