@@ -1,4 +1,4 @@
-<h1 align='center'>multimodal control for audio-driven video diffusion model</h1>
+<h1 align='center'>audio-driven video diffusion model</h1>
 
 Implementation for diffusion based audio-driven talking head generation methods
 
@@ -34,34 +34,11 @@ Implementation for diffusion based audio-driven talking head generation methods
 <br> -->
 # TODOs
 - [ ] EMO implementation
-  - [x] Face locator: use hallo's implementation (uses 3-channel mask)
-  - [x] Speed encoder
-    - [x] Speed bucket: bucket value (center & radius ?) -> set to PI 
-    - [x] MLP
-  - [x] ReferenceNet
-    - [x] unet: use hallo's implementation
-    - [x] crossAttn: follow AnimateAnything - use clip image emb
-  - [x] Denoisingunet
-    - [x] unet: use hallo's implementation
-    - [x] RefAttn: use hallo's implementation
-    - [x] Temporal Module: use hallo's implementation (identical to EMO)
-      - [x] Speed-CrsAttn (before the temporal layer)
-        - [x] down block
-        - [x] mid block
-        - [x] up block
-  - [ ] training code
+ - [ ] dataset
     - [ ] data - add clip feature extractor
     - [ ] data - head_pose speed extractor
-    - [x] stage 1 train
-    - [x] stage 1 valid
-    - [x] stage 1 dataset
-    - [ ] stage 2 train
-      - [x] audio module: modify the hallo's AudioBasicTransformerBlock
-        - issue: >>> attn_process None , due to grad_(False)?
-    - [ ] stage 2 valid
-    - [x] stage 2 dataset
-    - [x] stage 3 train
-    - [ ] stage 3 valid
+  - [ ] stage 2 train code
+      - issue: >>> attn_process None , due to grad_(False)?
 
 
 <!-- ## 📸 Showcase
@@ -125,11 +102,16 @@ Join our community and explore these amazing resources to make the most out of H
 
 <!-- ![abstract](assets/framework_1.jpg) -->
 ### Hallo
-![hallo_framework](assets/hallo_framework.png)
+<!-- ![hallo_framework](assets/hallo_framework.png) -->
+<img src="assets/hallo_framework.png" alt="drawing" width="400"/>
+
 ### EMO: Emote Portrait Alive
-![emoframework](assets/emo_pipeline.png)
+<img src="assets/emo_pipeline.png" alt="drawing" width="400"/>
+<!-- ![emoframework](assets/emo_pipeline.png) -->
+
 ### AniPortrait
-![AniPortrait](assets/aniportrait_pipeline.png)
+<img src="assets/aniportrait_pipeline.png" alt="drawing" width="400"/>
+<!-- ![AniPortrait](assets/aniportrait_pipeline.png) -->
 
 ## ⚙️ Installation
 environment setting based on [hallo](https://github.com/fudan-generative-vision/hallo)
@@ -164,15 +146,15 @@ The entry point for inference is `scripts/inference.py`. Before testing your cas
 3. [Run inference](#run-inference).
 
 ### 📥 Download Pretrained Models
-
-You can easily get all pretrained models required by inference from our [HuggingFace repo](https://huggingface.co/fudan-generative-ai/hallo).
+<!-- 
+You can easily get all pretrained models required by inference from our [HuggingFace repo](https://huggingface.co/fudan-generative-ai/hallo). 
 
 Clone the pretrained models into `${PROJECT_ROOT}/pretrained_models` directory by cmd below:
 
 ```shell
 git lfs install
 git clone https://huggingface.co/fudan-generative-ai/hallo pretrained_models
-```
+``` -->
 
 Or you can download them separately from their source repo:
 
@@ -185,6 +167,7 @@ Or you can download them separately from their source repo:
 - [sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse): Weights are intended to be used with the diffusers library. (_Thanks to [stablilityai](https://huggingface.co/stabilityai)_)
 - [StableDiffusion V1.5](https://huggingface.co/runwayml/stable-diffusion-v1-5): Initialized and fine-tuned from Stable-Diffusion-v1-2. (_Thanks to [runwayml](https://huggingface.co/runwayml)_)
 - [wav2vec](https://huggingface.co/facebook/wav2vec2-base-960h): wav audio to vector model from [Facebook](https://huggingface.co/facebook/wav2vec2-base-960h).
+- [AniPortrait](https://huggingface.co/lambdalabs/sd-image-variations-diffusers/tree/main): checkpoints for AniPortrait
 
 Finally, these pretrained models should be organized as follows:
 
@@ -254,10 +237,16 @@ We have provided [some samples](examples/) for your reference.
 
 ### 🎮 Run Inference
 
-Simply to run the `scripts/inference.py` and pass `source_image` and `driving_audio` as input:
+Simply to run the `scripts/inference_$.py` and pass `source_image` and `driving_audio` as input:
 
+for hallo:
 ```bash
-python scripts/inference.py --source_image examples/reference_images/1.jpg --driving_audio examples/driving_audios/1.wav
+python scripts/inference_hallo.py --source_image examples/reference_images/1.jpg --driving_audio examples/driving_audios/1.wav
+```
+
+for emo:
+```bash
+python scripts/inference_emo.py --source_image examples/reference_images/1.jpg --driving_audio examples/driving_audios/1.wav
 ```
 
 Animation results will be saved as `${PROJECT_ROOT}/.cache/output.mp4` by default. You can pass `--output` to specify the output file name. You can find more examples for inference at [examples folder](https://github.com/fudan-generative-vision/hallo/tree/main/examples).
@@ -265,7 +254,7 @@ Animation results will be saved as `${PROJECT_ROOT}/.cache/output.mp4` by defaul
 For more options:
 
 ```shell
-usage: inference.py [-h] [-c CONFIG] [--source_image SOURCE_IMAGE] [--driving_audio DRIVING_AUDIO] [--output OUTPUT] [--pose_weight POSE_WEIGHT]
+usage: inference_hallo.py [-h] [-c CONFIG] [--source_image SOURCE_IMAGE] [--driving_audio DRIVING_AUDIO] [--output OUTPUT] [--pose_weight POSE_WEIGHT]
                     [--face_weight FACE_WEIGHT] [--lip_weight LIP_WEIGHT] [--face_expand_ratio FACE_EXPAND_RATIO]
 
 options:
@@ -355,7 +344,7 @@ accelerate launch -m \
   --main_process_port 20055 \
   --num_machines 1 \
   --num_processes 8 \
-  scripts.train_stage1 --config ./configs/train/stage1.yaml
+  scripts.train_stage1_hallo --config ./configs/train/hallo/stage1.yaml
 ```
 
 #### Accelerate Usage Explanation
