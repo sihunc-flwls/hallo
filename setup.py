@@ -9,14 +9,14 @@ metadata, required dependencies, and provides the entry point for installing the
 # -*- coding: utf-8 -*-
 from setuptools import setup
 
-packages = \
-    [
-        'hallo', 'hallo.datasets', 'hallo.models', 'hallo.animate', 'hallo.utils', \
-        'emo', 'emo.datasets', 'emo.models', 'emo.animate', 'emo.utils' \
-    ]
+# packages = \
+#     [
+#         'hallo', 'hallo.datasets', 'hallo.models', 'hallo.animate', 'hallo.utils', \
+#         'emo', 'emo.datasets', 'emo.models', 'emo.animate', 'emo.utils' \
+#     ]
 
-package_data = \
-{'': ['*']}
+# package_data = \
+# {'': ['*']}
 
 install_requires = \
 ['accelerate==0.28.0',
@@ -48,8 +48,9 @@ setup_kwargs = {
     'maintainer': 'None',
     'maintainer_email': 'None',
     'url': 'None',
-    'packages': packages,
-    'package_data': package_data,
+    'package_dir':{"": "src"},
+    # 'packages': packages,
+    # 'package_data': package_data,
     'install_requires': install_requires,
     'python_requires': '>=3.10,<4.0',
 }
