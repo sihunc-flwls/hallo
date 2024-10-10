@@ -51,18 +51,17 @@ Implementation for diffusion based audio-driven talking head generation methods
         - [x] up block
   - [ ] training code
     - [ ] data - add clip feature extractor
-    - [ ] data - head speed extractor
+    - [ ] data - head_pose speed extractor
     - [x] stage 1 train
     - [x] stage 1 valid
     - [x] stage 1 dataset
     - [ ] stage 2 train
-      - [x] audio module: modify the hallo's AudioTemporalBasicTransformerBlock
-      - [ ] issue: >>> attn_process None , due to grad_(False)?
+      - [x] audio module: modify the hallo's AudioBasicTransformerBlock
+        - issue: >>> attn_process None , due to grad_(False)?
     - [ ] stage 2 valid
     - [x] stage 2 dataset
     - [x] stage 3 train
     - [ ] stage 3 valid
-    - [ ] stage 3 dataset
 
 
 <!-- ## 📸 Showcase

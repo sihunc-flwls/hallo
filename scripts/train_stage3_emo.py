@@ -85,8 +85,9 @@ class Net(nn.Module):
         face_locator (FaceLocator): The face locator model used for face animation.
         reference_control_writer: The reference control writer component.
         reference_control_reader: The reference control reader component.
-        imageproj: The image projection model.
         audioproj: The audio projection model.
+        image_enc: The image projection model.
+        speed_enc: The speed projection model.
 
     Forward method:
         noisy_latents (torch.Tensor): The noisy latents tensor.
@@ -95,9 +96,6 @@ class Net(nn.Module):
         clip_image_emb (torch.Tensor): The face embeddings tensor.
         audio_emb (torch.Tensor): The audio embeddings tensor.
         mask (torch.Tensor): Hard face mask for face locator.
-        full_mask (torch.Tensor): Pose Mask.
-        face_mask (torch.Tensor): Face Mask
-        lip_mask (torch.Tensor): Lip Mask
         uncond_img_fwd (bool): A flag indicating whether to perform reference image unconditional forward pass.
         uncond_audio_fwd (bool): A flag indicating whether to perform audio unconditional forward pass.
 
@@ -112,6 +110,7 @@ class Net(nn.Module):
         reference_control_writer: ReferenceAttentionControl,
         reference_control_reader: ReferenceAttentionControl,
         audioproj: AudioProjModel,
+        image_enc: CLIPVisionModelWithProjection,
         speed_enc: SpeedEncoder,
     ):
         super().__init__()
@@ -121,6 +120,7 @@ class Net(nn.Module):
         self.reference_control_writer = reference_control_writer
         self.reference_control_reader = reference_control_reader
         self.audioproj = audioproj
+        self.image_enc = image_enc
         self.speed_enc = speed_enc
 
     def forward(
@@ -297,8 +297,9 @@ def log_validation(
     reference_unet = ori_net.reference_unet
     denoising_unet = ori_net.denoising_unet
     face_locator = ori_net.face_locator
-    imageproj = ori_net.imageproj
     audioproj = ori_net.audioproj
+    image_enc = ori_net.image_enc
+    speed_enc = ori_net.speed_enc
 
     generator = torch.manual_seed(42)
     tmp_denoising_unet = copy.deepcopy(denoising_unet)
@@ -308,8 +309,9 @@ def log_validation(
         reference_unet=reference_unet,
         denoising_unet=tmp_denoising_unet,
         face_locator=face_locator,
-        image_proj=imageproj,
+        image_encoder=image_enc,
         scheduler=scheduler,
+        speed_encoder=speed_enc,
     )
     pipeline = pipeline.to("cuda")
 
@@ -329,7 +331,7 @@ def log_validation(
         source_image_pixels, \
         source_image_face_region, \
         source_image_face_emb, \
-        _, _, _ = image_processor.preprocess(
+        source_image_clip_img = image_processor.preprocess(
             ref_img_path, os.path.join(save_dir, '.cache'), cfg.face_expand_ratio)
         audio_emb, audio_length = audio_processor.preprocess(
             audio_path, clip_length)
@@ -372,16 +374,23 @@ def log_validation(
             ]
             audio_tensor = audio_tensor.unsqueeze(0)
             audio_tensor = audio_tensor.to(
-                device=audioproj.device, dtype=audioproj.dtype)
+                device=audioproj.device, dtype=audioproj.dtype
+            )
             audio_tensor = audioproj(audio_tensor)
+
+            speed_emb = torch.ones(audio_tensor.shape[0]).to(
+                dtype=speed_enc.dtype, device=speed_enc.device
+            )
 
             pipeline_output = pipeline(
                 ref_image=pixel_values_ref_img,
-                audio_tensor=audio_tensor,
                 face_emb=source_image_face_emb,
+                audio_tensor=audio_tensor,
                 face_mask=source_image_face_region,
+                clip_img=source_image_clip_img,
                 width=cfg.data.train_width,
                 height=cfg.data.train_height,
+                speed_emb=speed_emb,
                 video_length=clip_length,
                 num_inference_steps=cfg.inference_steps,
                 guidance_scale=cfg.cfg_scale,
@@ -410,7 +419,7 @@ def log_validation(
     return tensor_result
 
 
-def train_stage2_process(cfg: argparse.Namespace) -> None:
+def train_stage3_process(cfg: argparse.Namespace) -> None:
     """
     Trains the model using the given configuration (cfg).
 
@@ -484,7 +493,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
 
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
         cfg.base_model_path, # pretrained_model_path
-        "", # cfg.mm_path, # motion_module_path
+        cfg.mm_path, # motion_module_path
         subfolder="unet",
         unet_additional_kwargs=OmegaConf.to_container(
             cfg.unet_additional_kwargs
@@ -514,32 +523,34 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         speed_embedding_dim=768,
     ).to(device="cuda", dtype=weight_dtype)
 
-    # load module weight from stage 1
-    stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
-    denoising_unet_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "denoising_unet-*.pth")
-    ))[-1]
-    denoising_unet.load_state_dict(
-        torch.load(denoising_unet_ckpt, map_location="cpu"),
-        strict=False,
-    )
+    if False:
+        # load module weight from stage 1
+        stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
+        denoising_unet_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "denoising_unet-*.pth")
+        ))[-1]
+        denoising_unet.load_state_dict(
+            torch.load(denoising_unet_ckpt, map_location="cpu"),
+            strict=False,
+        )
 
-    reference_unet_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "reference_unet-*.pth")
-    ))[-1]
-    reference_unet.load_state_dict(
-        torch.load(reference_unet_ckpt, map_location="cpu"),
-        strict=False,
-    )
+        reference_unet_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "reference_unet-*.pth")
+        ))[-1]
+        reference_unet.load_state_dict(
+            torch.load(reference_unet_ckpt, map_location="cpu"),
+            strict=False,
+        )
 
-    face_locator_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "face_locator-*.pth")
-    ))[-1]
-    face_locator.load_state_dict(
-        torch.load(face_locator_ckpt, map_location="cpu"),
-        strict=False,
-    )
-
+        face_locator_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "face_locator-*.pth")
+        ))[-1]
+        face_locator.load_state_dict(
+            torch.load(face_locator_ckpt, map_location="cpu"),
+            strict=False,
+        )
+    else:
+        print(">>>>>>>>>>> No ckpt loaded for debugging <<<<<<<<<<<<<")
 
     # Freeze
     vae.requires_grad_(False)
@@ -547,7 +558,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     reference_unet.requires_grad_(False)
     denoising_unet.requires_grad_(False)
     face_locator.requires_grad_(False)
-    audioproj.requires_grad_(True)
+    audioproj.requires_grad_(False)
     speed_enc.requires_grad_(True)
 
     # Set motion module learnable
@@ -577,6 +588,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         reference_control_writer,
         reference_control_reader,
         audioproj,
+        image_enc,
         speed_enc,
     ).to(dtype=weight_dtype)
 
@@ -822,19 +834,18 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     )
                 
                 # audio embedding
-                audio_emb = batch["audio_tensor"].to("cuda", dtype=weight_dtype)
+                audio_emb = batch["audio_tensor"].to("cuda", dtype=weight_dtype) 
                 # speed embedding
                 speed_emb = batch["head_speed"].to("cuda", dtype=weight_dtype)
-
                 # ---- Forward!!! -----
                 model_pred = net(
-                    noisy_latents=noisy_latents,
-                    timesteps=timesteps,
-                    ref_image_latents=ref_image_latents,
-                    clip_image_emb=clip_image_embeds,
-                    audio_emb=audio_emb,
-                    mask=pixel_values_mask,
-                    speed_emb=speed_emb,
+                    noisy_latents=noisy_latents, # [1, 4, 14, 64, 64]
+                    timesteps=timesteps, # [1]
+                    ref_image_latents=ref_image_latents, # [3, 4, 64, 64]
+                    clip_image_emb=clip_image_embeds, # [1, 1, 768]
+                    audio_emb=audio_emb,# [1, 14, 5, 12, 768]
+                    mask=pixel_values_mask, # [1, 3, 14, 512, 512]
+                    speed_emb=speed_emb, # [1, 14]
                     uncond_img_fwd=uncond_img_fwd,
                     uncond_audio_fwd=uncond_audio_fwd,
                 )
@@ -894,20 +905,20 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                         generator = torch.Generator(device=accelerator.device)
                         generator.manual_seed(cfg.seed)
 
-                        # log_validation(
-                        #     accelerator=accelerator,
-                        #     vae=vae,
-                        #     net=net,
-                        #     scheduler=val_noise_scheduler,
-                        #     width=cfg.data.train_width,
-                        #     height=cfg.data.train_height,
-                        #     clip_length=cfg.data.n_sample_frames,
-                        #     cfg=cfg,
-                        #     save_dir=validation_dir,
-                        #     global_step=global_step,
-                        #     times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
-                        #     face_analysis_model_path=cfg.face_analysis_model_path
-                        # )
+                        log_validation(
+                            accelerator=accelerator,
+                            vae=vae,
+                            net=net,
+                            scheduler=val_noise_scheduler,
+                            width=cfg.data.train_width,
+                            height=cfg.data.train_height,
+                            clip_length=cfg.data.n_sample_frames,
+                            cfg=cfg,
+                            save_dir=validation_dir,
+                            global_step=global_step,
+                            times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
+                            face_analysis_model_path=cfg.face_analysis_model_path
+                        )
 
             logs = {
                 "step_loss": loss.detach().item(),
@@ -974,6 +985,6 @@ if __name__ == "__main__":
 
     try:
         config = load_config(args.config)
-        train_stage2_process(config)
+        train_stage3_process(config)
     except Exception as e:
         logging.error("Failed to execute the training process: %s", e)

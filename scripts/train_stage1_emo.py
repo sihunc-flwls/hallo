@@ -220,11 +220,11 @@ def log_validation(
     
     pipe = StaticPipeline(
         vae=vae,
-        image_encoder=image_enc,
         reference_unet=reference_unet,
         denoising_unet=denoising_unet,
         face_locator=face_locator,
-        scheduler=scheduler
+        scheduler=scheduler,
+        image_encoder=image_enc,
     )
 
     pil_images = []
@@ -376,26 +376,20 @@ def train_stage1_process(cfg: argparse.Namespace) -> None:
     vae.requires_grad_(False)
     image_enc.requires_grad_(False)
     face_locator.requires_grad_(False)
-    if True: # need to be True
+
+    if True:
         denoising_unet.requires_grad_(True)
         reference_unet.requires_grad_(True)
     else: # for debuging
         denoising_unet.requires_grad_(True)
         reference_unet.requires_grad_(False)
 
-    # # Some top layer parames of reference_unet don't need grad
-    # for name, param in reference_unet.named_parameters():
-    #     if "up_blocks.3" in name:
-    #         param.requires_grad_(False)
-    #     else:
-    #         param.requires_grad_(True)
-
-    # Set unet trainable parameters ## for stage 2
-    # for name, param in denoising_unet.named_parameters():
-    #     for trainable_module_name in ["motion_modules"]:
-    #         if trainable_module_name in name:
-    #             param.requires_grad = True
-    #             break
+    # Some top layer parames of reference_unet don't need grad
+    for name, param in reference_unet.named_parameters():
+        if "up_blocks.3" in name:
+            param.requires_grad_(False)
+        else:
+            param.requires_grad_(True)
 
     reference_control_writer = ReferenceAttentionControl(
         reference_unet,

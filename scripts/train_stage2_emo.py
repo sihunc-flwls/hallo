@@ -255,6 +255,7 @@ def log_validation(
     accelerator: Accelerator,
     vae: AutoencoderKL,
     net: Net,
+    image_encoder: CLIPVisionModelWithProjection,
     scheduler: DDIMScheduler,
     width: int,
     height: int,
@@ -291,7 +292,6 @@ def log_validation(
     reference_unet = ori_net.reference_unet
     denoising_unet = ori_net.denoising_unet
     face_locator = ori_net.face_locator
-    imageproj = ori_net.imageproj
     audioproj = ori_net.audioproj
 
     generator = torch.manual_seed(42)
@@ -300,9 +300,9 @@ def log_validation(
     pipeline = FaceAnimatePipeline(
         vae=vae,
         reference_unet=reference_unet,
+        image_encoder=image_encoder,
         denoising_unet=tmp_denoising_unet,
         face_locator=face_locator,
-        image_proj=imageproj,
         scheduler=scheduler,
     )
     pipeline = pipeline.to("cuda")
@@ -320,35 +320,22 @@ def log_validation(
 
     for idx, ref_img_path in enumerate(cfg.ref_img_path):
         audio_path = cfg.audio_path[idx]
+
         source_image_pixels, \
         source_image_face_region, \
         source_image_face_emb, \
-        source_image_full_mask, \
-        source_image_face_mask, \
-        source_image_lip_mask = image_processor.preprocess(
+        source_image_clip_img = image_processor.preprocess(
             ref_img_path, os.path.join(save_dir, '.cache'), cfg.face_expand_ratio)
         audio_emb, audio_length = audio_processor.preprocess(
             audio_path, clip_length)
 
         audio_emb = process_audio_emb(audio_emb)
 
-        source_image_pixels = source_image_pixels.unsqueeze(0)
+        source_image_pixels = source_image_pixels.unsqueeze(0) # (b, c, h, w)
         source_image_face_region = source_image_face_region.unsqueeze(0)
+        # source_image_clip_img --> [1, 3, 224, 224]
         source_image_face_emb = source_image_face_emb.reshape(1, -1)
         source_image_face_emb = torch.tensor(source_image_face_emb)
-
-        source_image_full_mask = [
-            (mask.repeat(clip_length, 1))
-            for mask in source_image_full_mask
-        ]
-        source_image_face_mask = [
-            (mask.repeat(clip_length, 1))
-            for mask in source_image_face_mask
-        ]
-        source_image_lip_mask = [
-            (mask.repeat(clip_length, 1))
-            for mask in source_image_lip_mask
-        ]
 
         times = audio_emb.shape[0] // clip_length
         tensor_result = []
@@ -381,17 +368,16 @@ def log_validation(
             ]
             audio_tensor = audio_tensor.unsqueeze(0)
             audio_tensor = audio_tensor.to(
-                device=audioproj.device, dtype=audioproj.dtype)
+                device=audioproj.device, dtype=audioproj.dtype
+            )
             audio_tensor = audioproj(audio_tensor)
 
             pipeline_output = pipeline(
                 ref_image=pixel_values_ref_img,
-                audio_tensor=audio_tensor,
                 face_emb=source_image_face_emb,
+                audio_tensor=audio_tensor,
                 face_mask=source_image_face_region,
-                pixel_values_full_mask=source_image_full_mask,
-                pixel_values_face_mask=source_image_face_mask,
-                pixel_values_lip_mask=source_image_lip_mask,
+                clip_img=source_image_clip_img,
                 width=cfg.data.train_width,
                 height=cfg.data.train_height,
                 video_length=clip_length,
@@ -399,6 +385,7 @@ def log_validation(
                 guidance_scale=cfg.cfg_scale,
                 generator=generator,
             )
+            # pipeline_output = pipeline(ref_image=pixel_values_ref_img,face_emb=source_image_face_emb,audio_tensor=audio_tensor,face_mask=source_image_face_region,clip_img=source_image_clip_img,width=cfg.data.train_width,height=cfg.data.train_height,video_length=clip_length,num_inference_steps=cfg.inference_steps,guidance_scale=cfg.cfg_scale,generator=generator,)
 
             tensor_result.append(pipeline_output.videos)
 
@@ -521,31 +508,34 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         context_tokens=32,
     ).to(device="cuda", dtype=weight_dtype)
 
-    # load module weight from stage 1
-    stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
-    denoising_unet_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "denoising_unet-*.pth")
-    ))[-1]
-    denoising_unet.load_state_dict(
-        torch.load(denoising_unet_ckpt, map_location="cpu"),
-        strict=False,
-    )
+    if False:
+        # load module weight from stage 1
+        stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
+        denoising_unet_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "denoising_unet-*.pth")
+        ))[-1]
+        denoising_unet.load_state_dict(
+            torch.load(denoising_unet_ckpt, map_location="cpu"),
+            strict=False,
+        )
 
-    reference_unet_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "reference_unet-*.pth")
-    ))[-1]
-    reference_unet.load_state_dict(
-        torch.load(reference_unet_ckpt, map_location="cpu"),
-        strict=False,
-    )
+        reference_unet_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "reference_unet-*.pth")
+        ))[-1]
+        reference_unet.load_state_dict(
+            torch.load(reference_unet_ckpt, map_location="cpu"),
+            strict=False,
+        )
 
-    face_locator_ckpt = sorted(glob(
-        os.path.join(stage1_ckpt_dir, "face_locator-*.pth")
-    ))[-1]
-    face_locator.load_state_dict(
-        torch.load(face_locator_ckpt, map_location="cpu"),
-        strict=False,
-    )
+        face_locator_ckpt = sorted(glob(
+            os.path.join(stage1_ckpt_dir, "face_locator-*.pth")
+        ))[-1]
+        face_locator.load_state_dict(
+            torch.load(face_locator_ckpt, map_location="cpu"),
+            strict=False,
+        )
+    else:
+        print('No ckpt loaded for debugging')
 
     # Freeze
     vae.requires_grad_(False)
@@ -742,19 +732,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                 # Convert videos to latent space
                 pixel_values_vid = batch["pixel_values_vid"].to(weight_dtype)
 
-                # pixel_values_face_mask = batch["pixel_values_face_mask"]
-                # pixel_values_face_mask = get_attention_mask(
-                #     pixel_values_face_mask, weight_dtype
-                # )
-                # pixel_values_lip_mask = batch["pixel_values_lip_mask"]
-                # pixel_values_lip_mask = get_attention_mask(
-                #     pixel_values_lip_mask, weight_dtype
-                # )
-                # pixel_values_full_mask = batch["pixel_values_full_mask"]
-                # pixel_values_full_mask = get_attention_mask(
-                #     pixel_values_full_mask, weight_dtype
-                # )
-
                 with torch.no_grad():
                     video_length = pixel_values_vid.shape[1]
                     pixel_values_vid = rearrange(
@@ -853,7 +830,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     uncond_img_fwd=uncond_img_fwd,
                     uncond_audio_fwd=uncond_audio_fwd,
                 )
-                #import pdb;pdb.set_trace()
                 if cfg.snr_gamma == 0:
                     loss = F.mse_loss(
                         model_pred.float(),
@@ -909,21 +885,21 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                     if accelerator.is_main_process:
                         generator = torch.Generator(device=accelerator.device)
                         generator.manual_seed(cfg.seed)
-
-                        # log_validation(
-                        #     accelerator=accelerator,
-                        #     vae=vae,
-                        #     net=net,
-                        #     scheduler=val_noise_scheduler,
-                        #     width=cfg.data.train_width,
-                        #     height=cfg.data.train_height,
-                        #     clip_length=cfg.data.n_sample_frames,
-                        #     cfg=cfg,
-                        #     save_dir=validation_dir,
-                        #     global_step=global_step,
-                        #     times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
-                        #     face_analysis_model_path=cfg.face_analysis_model_path
-                        # )
+                        log_validation(
+                            accelerator=accelerator,
+                            vae=vae,
+                            net=net,
+                            image_encoder=image_enc,
+                            scheduler=val_noise_scheduler,
+                            width=cfg.data.train_width,
+                            height=cfg.data.train_height,
+                            clip_length=cfg.data.n_sample_frames,
+                            cfg=cfg,
+                            save_dir=validation_dir,
+                            global_step=global_step,
+                            times=cfg.single_inference_times if cfg.single_inference_times is not None else None,
+                            face_analysis_model_path=cfg.face_analysis_model_path
+                        )
 
             logs = {
                 "step_loss": loss.detach().item(),
