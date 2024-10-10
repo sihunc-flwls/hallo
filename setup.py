@@ -10,7 +10,10 @@ metadata, required dependencies, and provides the entry point for installing the
 from setuptools import setup
 
 packages = \
-    ['hallo', 'hallo.datasets', 'hallo.models', 'hallo.animate', 'hallo.utils']
+    [
+        'hallo', 'hallo.datasets', 'hallo.models', 'hallo.animate', 'hallo.utils', \
+        'emo', 'emo.datasets', 'emo.models', 'emo.animate', 'emo.utils' \
+    ]
 
 package_data = \
 {'': ['*']}

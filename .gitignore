@@ -173,3 +173,7 @@ exp_output*/
 _*.npy
 _*.png
 _*.yaml
+*.mp4
+scripts/train_stage1.py
+scripts/train_stage2.py
+*toy.py
