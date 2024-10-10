@@ -177,3 +177,5 @@ _*.yaml
 scripts/train_stage1.py
 scripts/train_stage2.py
 *toy.py
+
+scripts/scripts_aniportrait/

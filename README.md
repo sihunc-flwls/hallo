@@ -125,9 +125,11 @@ Join our community and explore these amazing resources to make the most out of H
 
 <!-- ![abstract](assets/framework_1.jpg) -->
 ### Hallo
-![framework](assets/framework.jpg)
+![hallo_framework](assets/hallo_framework.png)
 ### EMO: Emote Portrait Alive
 ![emoframework](assets/emo_pipeline.png)
+### AniPortrait
+![AniPortrait](assets/aniportrait_pipeline.png)
 
 ## ⚙️ Installation
 environment setting based on [hallo](https://github.com/fudan-generative-vision/hallo)
@@ -188,6 +190,14 @@ Finally, these pretrained models should be organized as follows:
 
 ```text
 ./pretrained_models/
+|-- aniportrait/
+|   |-- audio2mesh.pt
+|   |-- audio2pose.pt
+|   |-- denoising_unet.pth
+|   |-- film_net_fp16.pt
+|   |-- motion_module.pth
+|   |-- pose_guider.pth
+|   `-- reference_unet.pth
 |-- audio_separator/
 |   |-- download_checks.json
 |   |-- mdx_model_data.json
@@ -375,7 +385,7 @@ For multi-node training, you need to manually run the command with different `ma
 
 For more settings, refer to the [Accelerate documentation](https://huggingface.co/docs/accelerate/en/index).
 
-## 📅️ Roadmap
+<!-- ## 📅️ Roadmap
 
 | Status | Milestone                                                                                             |    ETA     |
 | :----: | :---------------------------------------------------------------------------------------------------- | :--------: |
@@ -392,7 +402,7 @@ For more settings, refer to the [Accelerate documentation](https://huggingface.c
 - [ ] Bug: Sound volume affecting inference results (audio normalization).
 - [ ] ~~Enhancement: Inference code logic optimization~~. This solution doesn't show significant performance improvements. Trying other approaches.
 
-</details>
+</details> -->
 
 
 ## 📝 Citation
@@ -410,7 +420,18 @@ If you find our work useful for your research, please consider citing the paper:
 }
 ```
 
-## 🌟 Opportunities Available
+```
+@misc{wei2024aniportrait,
+      title={AniPortrait: Audio-Driven Synthesis of Photorealistic Portrait Animations}, 
+      author={Huawei Wei and Zejun Yang and Zhisheng Wang},
+      year={2024},
+      eprint={2403.17694},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
+
+<!-- ## 🌟 Opportunities Available
 
 Multiple research positions are open at the **Generative Vision Lab, Fudan University**! Include:
 
@@ -419,7 +440,7 @@ Multiple research positions are open at the **Generative Vision Lab, Fudan Unive
 - PhD candidate
 - Master students
 
-Interested individuals are encouraged to contact us at [siyuzhu@fudan.edu.cn](mailto://siyuzhu@fudan.edu.cn) for further information.
+Interested individuals are encouraged to contact us at [siyuzhu@fudan.edu.cn](mailto://siyuzhu@fudan.edu.cn) for further information. -->
 
 ## ⚠️ Social Risks and Mitigations
 
@@ -427,14 +448,14 @@ The development of portrait image animation technologies driven by audio inputs 
 
 ## 🤗 Acknowledgements
 
-We would like to thank the contributors to the [magic-animate](https://github.com/magic-research/magic-animate), [AnimateDiff](https://github.com/guoyww/AnimateDiff), [ultimatevocalremovergui](https://github.com/Anjok07/ultimatevocalremovergui), [AniPortrait](https://github.com/Zejun-Yang/AniPortrait) and [Moore-AnimateAnyone](https://github.com/MooreThreads/Moore-AnimateAnyone) repositories, for their open research and exploration.
+We would like to thank the contributors to the [hallo](https://github.com/fudan-generative-vision/hallo), [magic-animate](https://github.com/magic-research/magic-animate), [AnimateDiff](https://github.com/guoyww/AnimateDiff), [ultimatevocalremovergui](https://github.com/Anjok07/ultimatevocalremovergui), [AniPortrait](https://github.com/Zejun-Yang/AniPortrait), [Emote-hack](https://github.com/johndpope/Emote-hack) and [Moore-AnimateAnyone](https://github.com/MooreThreads/Moore-AnimateAnyone) repositories, for their open research and exploration.
 
 If we missed any open-source projects or related articles, we would like to complement the acknowledgement of this specific work immediately.
-
+<!-- 
 ## 👏 Community Contributors
 
 Thank you to all the contributors who have helped to make this project better!
 
 <a href="https://github.com/fudan-generative-vision/hallo/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=fudan-generative-vision/hallo" />
-</a>
+</a> -->
