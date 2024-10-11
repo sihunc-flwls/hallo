@@ -178,6 +178,7 @@ scripts/train_stage1.py
 scripts/train_stage2.py
 *toy.py
 
+scripts/inference.py
 scripts/scripts_aniportrait/
 */*/*/x_*.py
 */*/x_*.py
