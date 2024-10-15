@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 import torch
 from einops import rearrange
 
-from .attention import BasicTransformerBlock, TemporalBasicTransformerBlock
+from hallo.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
 
 
 def torch_dfs(model: torch.nn.Module):

@@ -18,7 +18,7 @@ from diffusers.utils import BaseOutput
 from einops import rearrange, repeat
 from torch import nn
 
-from .attention import (AudioTemporalBasicTransformerBlock,
+from hallo.models.attention import (AudioTemporalBasicTransformerBlock,
                         TemporalBasicTransformerBlock)
 
 
