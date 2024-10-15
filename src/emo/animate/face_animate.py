@@ -382,14 +382,14 @@ class FaceAnimatePipeline(DiffusionPipeline):
         # denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         
-        print("clip_img", clip_img.shape)
-        print("latents", latents.shape)
-        print("ref_image_latents", ref_image_latents.shape)
-        print("face_mask", face_mask.shape)
-        print("audio_tensor", audio_tensor.shape)
-        print("speed_emb", speed_emb.shape)
-        print("encoder_hidden_states", encoder_hidden_states.shape)
-        print("encoder_hidden_states.repeat", encoder_hidden_states.repeat(ref_image_latents.shape[0], 1, 1).shape)
+        # print("clip_img", clip_img.shape)
+        # print("latents", latents.shape)
+        # print("ref_image_latents", ref_image_latents.shape)
+        # print("face_mask", face_mask.shape)
+        # print("audio_tensor", audio_tensor.shape)
+        # print("speed_emb", speed_emb.shape)
+        # print("encoder_hidden_states", encoder_hidden_states.shape)
+        # print("encoder_hidden_states.repeat", encoder_hidden_states.repeat(ref_image_latents.shape[0], 1, 1).shape)
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
