@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 import torch
 from einops import rearrange
 
-from .attention import BasicTransformerBlock, TemporalBasicTransformerBlock
+from emo.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
 
 
 def torch_dfs(model: torch.nn.Module):
@@ -442,7 +442,6 @@ class ReferenceAttentionControl:
                     if isinstance(module, BasicTransformerBlock)
                 ]
 
-            #import pdb;pdb.set_trace()
             assert len(reader_attn_modules) == len(writer_attn_modules), "len does not match!"
             reader_attn_modules = sorted(
                 reader_attn_modules, key=lambda x: -x.norm1.normalized_shape[0]

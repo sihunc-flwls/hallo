@@ -39,7 +39,7 @@ from diffusers.utils.torch_utils import randn_tensor
 from einops import rearrange, repeat
 from tqdm import tqdm
 
-from hallo.models.mutual_self_attention import ReferenceAttentionControl
+from emo.models.mutual_self_attention import ReferenceAttentionControl
 
 
 @dataclass
@@ -302,10 +302,10 @@ class FaceAnimatePipeline(DiffusionPipeline):
         clip_image_embeds = clip_img.to(self.image_encoder.device, self.image_encoder.dtype)
         encoder_hidden_states = self.image_encoder(
             clip_image_embeds
-        ).image_embeds.unsqueeze(0)
+        ).image_embeds.unsqueeze(1)
         uncond_encoder_hidden_states = self.image_encoder(
             torch.zeros_like(clip_image_embeds)
-        ).image_embeds.unsqueeze(0)
+        ).image_embeds.unsqueeze(1)
         # clip_image_embeds = face_emb
         # clip_image_embeds = clip_image_embeds.to(self.image_proj.device, self.image_proj.dtype)
         # encoder_hidden_states = self.image_proj(clip_image_embeds)
@@ -316,14 +316,14 @@ class FaceAnimatePipeline(DiffusionPipeline):
                 [uncond_encoder_hidden_states, encoder_hidden_states], dim=0
             )
 
-        reference_control_writer = ReferenceAttentionControl(
+        self.reference_control_writer = ReferenceAttentionControl(
             self.reference_unet,
             do_classifier_free_guidance=do_classifier_free_guidance,
             mode="write",
             batch_size=batch_size,
             fusion_blocks="full",
         )
-        reference_control_reader = ReferenceAttentionControl(
+        self.reference_control_reader = ReferenceAttentionControl(
             self.denoising_unet,
             do_classifier_free_guidance=do_classifier_free_guidance,
             mode="read",
@@ -361,19 +361,36 @@ class FaceAnimatePipeline(DiffusionPipeline):
         face_mask = self.face_locator(face_mask)
         face_mask = torch.cat([torch.zeros_like(face_mask), face_mask], dim=0) if do_classifier_free_guidance else face_mask
 
-        uncond_audio_tensor = torch.zeros_like(audio_tensor)
-        audio_tensor = torch.cat([uncond_audio_tensor, audio_tensor], dim=0)
-        audio_tensor = audio_tensor.to(dtype=self.denoising_unet.dtype, device=self.denoising_unet.device)
+        if do_classifier_free_guidance:
+            uncond_audio_tensor = torch.zeros_like(audio_tensor)
+            audio_tensor = torch.cat([uncond_audio_tensor, audio_tensor], dim=0)
+            audio_tensor = audio_tensor.to(dtype=self.denoising_unet.dtype, device=self.denoising_unet.device)
 
-        if self.speed_encoder is not None:
-            if speed_emb is None:
-                speed_emb = torch.ones(
-                    audio_tensor.shape[0]
-                ).to(dtype=self.speed_encoder.dtype, device=self.speed_encoder.device)
+        if speed_emb is None:
+            speed_emb = torch.ones(audio_tensor.shape[0]).to(
+                dtype=self.speed_encoder.dtype, device=self.speed_encoder.device
+            )
+
+        if do_classifier_free_guidance:
+            # uncond_speed_emb = torch.zeros_like(speed_emb)
+            # speed_emb = torch.cat([uncond_speed_emb, speed_emb], dim=0)
+            speed_emb = speed_emb.repeat(2, 1)
+            
+        with torch.no_grad():
             speed_emb = self.speed_encoder(speed_emb)
 
         # denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        
+        print("clip_img", clip_img.shape)
+        print("latents", latents.shape)
+        print("ref_image_latents", ref_image_latents.shape)
+        print("face_mask", face_mask.shape)
+        print("audio_tensor", audio_tensor.shape)
+        print("speed_emb", speed_emb.shape)
+        print("encoder_hidden_states", encoder_hidden_states.shape)
+        print("encoder_hidden_states.repeat", encoder_hidden_states.repeat(ref_image_latents.shape[0], 1, 1).shape)
+
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 # import pdb;pdb.set_trace()
@@ -384,18 +401,13 @@ class FaceAnimatePipeline(DiffusionPipeline):
                             (2 if do_classifier_free_guidance else 1), 1, 1, 1
                         ),
                         torch.zeros_like(t),
-                        encoder_hidden_states=encoder_hidden_states,
+                        encoder_hidden_states=encoder_hidden_states.repeat(
+                            ref_image_latents.shape[0], 1, 1
+                        ),
                         return_dict=False,
                     )
-                    reference_control_reader.update(reference_control_writer)
+                    self.reference_control_reader.update(self.reference_control_writer)
                 
-                # encoder_hidden_states :: [2, 4, 768]
-                # ref_image_latents.shape :: [3, 4, 64, 64]
-                # ref_image_latents.repeat :: [6, 4, 64, 64]
-                # latents :: [1, 4, 14, 64, 64]
-                # audio_tensor :: [2, 14, 32, 768]
-                # import pdb;pdb.set_trace()
-
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
@@ -425,8 +437,8 @@ class FaceAnimatePipeline(DiffusionPipeline):
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
-            reference_control_reader.clear()
-            reference_control_writer.clear()
+            self.reference_control_reader.clear()
+            self.reference_control_writer.clear()
 
         # Post-processing
         images = self.decode_latents(latents)  # (b, c, f, h, w)

@@ -18,7 +18,7 @@ from diffusers.utils import BaseOutput
 from einops import rearrange, repeat
 from torch import nn
 
-from .attention import (
+from emo.models.attention import (
     SpeedBasicTransformerBlock,
     AudioBasicTransformerBlock,
     TemporalBasicTransformerBlock
