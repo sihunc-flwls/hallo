@@ -111,7 +111,7 @@ cfg_scale: 3.5
 seed: 42
 resume_from_checkpoint: "latest"
 checkpointing_steps: 500
-exp_name: "stage2"
+exp_name: "stage3"
 output_dir: "./exp_output"
 
 ref_img_path:

@@ -74,6 +74,8 @@ unet_additional_kwargs:
     - "down"
     - "mid"
   stack_enable_blocks_depth: [0,1,2,3]
+  use_speed_module: true
+  speed_attention_dim: 768
   
 
 enable_zero_snr: true
