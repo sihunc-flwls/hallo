@@ -36,6 +36,8 @@ from diffusers import AutoencoderKL, DDIMScheduler
 from omegaconf import OmegaConf
 from torch import nn
 
+from transformers import CLIPVisionModelWithProjection
+
 from emo.animate.face_animate import FaceAnimatePipeline
 from emo.datasets.audio_processor import AudioProcessor
 from emo.datasets.image_processor import ImageProcessor
@@ -74,8 +76,8 @@ class Net(nn.Module):
         self.reference_unet = reference_unet
         self.denoising_unet = denoising_unet
         self.face_locator = face_locator
-        self.image_enc = image_enc
         self.audioproj = audioproj
+        self.image_enc = image_enc
         self.speed_enc = speed_enc
 
     def forward(self,):
@@ -195,9 +197,15 @@ def inference_process(args: argparse.Namespace):
     val_noise_scheduler = DDIMScheduler(**sched_kwargs)
     sched_kwargs.update({"beta_schedule": "scaled_linear"})
 
-    vae = AutoencoderKL.from_pretrained(config.vae.model_path)
+    vae = AutoencoderKL.from_pretrained(
+        config.vae.model_path
+    )
+
     reference_unet = UNet2DConditionModel.from_pretrained(
-        config.base_model_path, subfolder="unet")
+        config.base_model_path,
+        subfolder="unet",
+    )
+    
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
         config.base_model_path,
         config.motion_module_path,
@@ -206,7 +214,10 @@ def inference_process(args: argparse.Namespace):
             config.unet_additional_kwargs),
         use_landmark=False,
     )
-    face_locator = FaceLocator(conditioning_embedding_channels=320)
+    face_locator = FaceLocator(
+        conditioning_embedding_channels=320,
+        conditioning_channels=3,
+    )
 
     image_enc = CLIPVisionModelWithProjection.from_pretrained(
         config.image_encoder_path,
@@ -290,7 +301,8 @@ def inference_process(args: argparse.Namespace):
         if len(tensor_result) == 0:
             # The first iteration
             motion_zeros = source_image_pixels.repeat(
-                config.data.n_motion_frames, 1, 1, 1)
+                config.data.n_motion_frames, 1, 1, 1
+            )
             motion_zeros = motion_zeros.to(
                 dtype=source_image_pixels.dtype, device=source_image_pixels.device)
             pixel_values_ref_img = torch.cat(
@@ -303,7 +315,9 @@ def inference_process(args: argparse.Namespace):
             motion_frames = motion_frames.to(
                 dtype=source_image_pixels.dtype, device=source_image_pixels.device)
             pixel_values_ref_img = torch.cat(
-                [source_image_pixels, motion_frames], dim=0)  # concat the ref image and the motion frames
+                [source_image_pixels, motion_frames], 
+                dim=0
+            )  # concat the ref image and the motion frames
 
         pixel_values_ref_img = pixel_values_ref_img.unsqueeze(0)
 

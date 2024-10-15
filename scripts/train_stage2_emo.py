@@ -508,7 +508,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         context_tokens=32,
     ).to(device="cuda", dtype=weight_dtype)
 
-    if False:
+    if True:
         # load module weight from stage 1
         stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
         denoising_unet_ckpt = sorted(glob(

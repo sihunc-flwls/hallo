@@ -523,7 +523,7 @@ def train_stage3_process(cfg: argparse.Namespace) -> None:
         speed_embedding_dim=768,
     ).to(device="cuda", dtype=weight_dtype)
 
-    if False:
+    if True:
         # load module weight from stage 1
         stage1_ckpt_dir = os.path.join(cfg.stage1_ckpt_dir, 'modules')
         denoising_unet_ckpt = sorted(glob(
@@ -979,7 +979,7 @@ def load_config(config_path: str) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", type=str, default="./configs/train/stage2.yaml"
+        "--config", type=str, default="./configs/train/emo/stage3.yaml"
     )
     args = parser.parse_args()
 
