@@ -31,3 +31,6 @@ isort==5.13.2
 pylint==3.2.2
 pre-commit==3.7.1
 gradio==4.36.1
+peft==0.13.2
+lora-diffusion @ git+https://github.com/cloneofsimo/lora.git@bdd51b04c49fa90a88919a19850ec3b4cf3c5ecd
+loralib==0.1.0
