@@ -411,6 +411,7 @@ class TemporalBasicTransformerBlock(nn.Module):
     """
     A PyTorch module that extends the BasicTransformerBlock to include temporal attention mechanisms.
     This class is particularly useful for video-related tasks where capturing temporal information within the sequence of frames is necessary.
+    (default: temporal attention is not used!)
 
     Attributes:
         dim (int): The dimension of the input and output embeddings.

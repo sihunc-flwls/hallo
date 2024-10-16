@@ -361,8 +361,10 @@ def _find_modules_v2(
                 # if 'TransformerTemporalModel' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
                 #     continue_flag = False
                 if 'TemporalTransformerBlock' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
+                    # blocks used in (motion_module).
                     continue_flag = False
                 if 'TemporalBasicTransformerBlock' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
+                    # although it is written as Temporal~Block, it is just a spatial-attn! 
                     continue_flag = False
                 if continue_flag:
                     continue
