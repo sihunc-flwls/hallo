@@ -340,7 +340,7 @@ def inference_process(args: argparse.Namespace):
             audio_tensor=audio_tensor, # [1, 16, 32, 768]
             face_emb=source_image_face_emb, # [1, 512]
             face_mask=source_image_face_region, # [1, 3, 512, 512]
-            clip_img=source_image_clip_img, # [1, 3 = 224, 224]
+            clip_img=source_image_clip_img, # [1, 3, 224, 224]
             speed_emb=speed_emb, # [1, 16]
             width=img_size[0],
             height=img_size[1],
