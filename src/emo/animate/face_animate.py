@@ -290,7 +290,6 @@ class FaceAnimatePipeline(DiffusionPipeline):
         device = self._execution_device
 
         do_classifier_free_guidance = guidance_scale > 1.0
-        # do_classifier_free_guidance = False
 
         # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -306,24 +305,20 @@ class FaceAnimatePipeline(DiffusionPipeline):
         uncond_encoder_hidden_states = self.image_encoder(
             torch.zeros_like(clip_image_embeds)
         ).image_embeds.unsqueeze(1)
-        # clip_image_embeds = face_emb
-        # clip_image_embeds = clip_image_embeds.to(self.image_proj.device, self.image_proj.dtype)
-        # encoder_hidden_states = self.image_proj(clip_image_embeds)
-        # uncond_encoder_hidden_states = self.image_proj(torch.zeros_like(clip_image_embeds))
-
+        
         if do_classifier_free_guidance:
             encoder_hidden_states = torch.cat(
                 [uncond_encoder_hidden_states, encoder_hidden_states], dim=0
             )
 
-        self.reference_control_writer = ReferenceAttentionControl(
+        reference_control_writer = ReferenceAttentionControl(
             self.reference_unet,
             do_classifier_free_guidance=do_classifier_free_guidance,
             mode="write",
             batch_size=batch_size,
             fusion_blocks="full",
         )
-        self.reference_control_reader = ReferenceAttentionControl(
+        reference_control_reader = ReferenceAttentionControl(
             self.denoising_unet,
             do_classifier_free_guidance=do_classifier_free_guidance,
             mode="read",
@@ -372,8 +367,6 @@ class FaceAnimatePipeline(DiffusionPipeline):
             )
 
         if do_classifier_free_guidance:
-            # uncond_speed_emb = torch.zeros_like(speed_emb)
-            # speed_emb = torch.cat([uncond_speed_emb, speed_emb], dim=0)
             speed_emb = speed_emb.repeat(2, 1)
             
         with torch.no_grad():
@@ -382,18 +375,8 @@ class FaceAnimatePipeline(DiffusionPipeline):
         # denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         
-        # print("clip_img", clip_img.shape)
-        # print("latents", latents.shape)
-        # print("ref_image_latents", ref_image_latents.shape)
-        # print("face_mask", face_mask.shape)
-        # print("audio_tensor", audio_tensor.shape)
-        # print("speed_emb", speed_emb.shape)
-        # print("encoder_hidden_states", encoder_hidden_states.shape)
-        # print("encoder_hidden_states.repeat", encoder_hidden_states.repeat(ref_image_latents.shape[0], 1, 1).shape)
-
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                # import pdb;pdb.set_trace()
                 # Forward reference image
                 if i == 0:
                     self.reference_unet(
@@ -401,12 +384,10 @@ class FaceAnimatePipeline(DiffusionPipeline):
                             (2 if do_classifier_free_guidance else 1), 1, 1, 1
                         ),
                         torch.zeros_like(t),
-                        encoder_hidden_states=encoder_hidden_states.repeat(
-                            ref_image_latents.shape[0], 1, 1
-                        ),
+                        encoder_hidden_states=encoder_hidden_states,
                         return_dict=False,
                     )
-                    self.reference_control_reader.update(self.reference_control_writer)
+                    reference_control_reader.update(reference_control_writer)
                 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
@@ -437,8 +418,8 @@ class FaceAnimatePipeline(DiffusionPipeline):
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
-            self.reference_control_reader.clear()
-            self.reference_control_writer.clear()
+            reference_control_reader.clear()
+            reference_control_writer.clear()
 
         # Post-processing
         images = self.decode_latents(latents)  # (b, c, f, h, w)
