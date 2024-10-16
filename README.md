@@ -37,8 +37,10 @@ Implementation for diffusion based audio-driven talking head generation methods
  - [ ] dataset
     - [ ] data - add clip feature extractor
     - [ ] data - head_pose speed extractor
-  - [ ] stage 2 train code
-      - issue: >>> attn_process None , due to grad_(False)?
+- [ ] Personalization
+  - [ ] LoRA (MotionDirector)
+  - [ ] Codebook (CyberHost)
+
 
 
 <!-- ## 📸 Showcase

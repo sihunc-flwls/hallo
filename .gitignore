@@ -169,6 +169,7 @@ data
 pretrained_models
 test_data
 
+_tmp/
 exp_output*/
 _*.npy
 _*.png
