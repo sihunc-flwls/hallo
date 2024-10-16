@@ -39,7 +39,12 @@ Implementation for diffusion based audio-driven talking head generation methods
     - [ ] data - head_pose speed extractor
 - [ ] Personalization
   - [ ] LoRA (MotionDirector)
+    - [x] set LoRA
+    - [ ] write train code
   - [ ] Codebook (CyberHost)
+    - [ ] make Codebook
+    - [ ] create and inject Codebook attention
+    - [ ] write train code
 
 
 

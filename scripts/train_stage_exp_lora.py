@@ -538,36 +538,36 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         context_tokens=32,
     ).to(device="cuda", dtype=weight_dtype)
 
-    # load module weight from stage 1
-    stage1_ckpt_dir = cfg.stage1_ckpt_dir
-    denoising_unet.load_state_dict(
-        torch.load(
-            os.path.join(stage1_ckpt_dir, "denoising_unet.pth"),
-            map_location="cpu",
-        ),
-        strict=False,
-    )
-    reference_unet.load_state_dict(
-        torch.load(
-            os.path.join(stage1_ckpt_dir, "reference_unet.pth"),
-            map_location="cpu",
-        ),
-        strict=False,
-    )
-    face_locator.load_state_dict(
-        torch.load(
-            os.path.join(stage1_ckpt_dir, "face_locator.pth"),
-            map_location="cpu",
-        ),
-        strict=False,
-    )
-    imageproj.load_state_dict(
-        torch.load(
-            os.path.join(stage1_ckpt_dir, "imageproj.pth"),
-            map_location="cpu",
-        ),
-        strict=False,
-    )
+    # # load module weight from stage 1
+    # stage1_ckpt_dir = cfg.stage1_ckpt_dir
+    # denoising_unet.load_state_dict(
+    #     torch.load(
+    #         os.path.join(stage1_ckpt_dir, "denoising_unet.pth"),
+    #         map_location="cpu",
+    #     ),
+    #     strict=False,
+    # )
+    # reference_unet.load_state_dict(
+    #     torch.load(
+    #         os.path.join(stage1_ckpt_dir, "reference_unet.pth"),
+    #         map_location="cpu",
+    #     ),
+    #     strict=False,
+    # )
+    # face_locator.load_state_dict(
+    #     torch.load(
+    #         os.path.join(stage1_ckpt_dir, "face_locator.pth"),
+    #         map_location="cpu",
+    #     ),
+    #     strict=False,
+    # )
+    # imageproj.load_state_dict(
+    #     torch.load(
+    #         os.path.join(stage1_ckpt_dir, "imageproj.pth"),
+    #         map_location="cpu",
+    #     ),
+    #     strict=False,
+    # )
 
     # Freeze
     freeze_params([
@@ -605,14 +605,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
             "TemporalTransformerBlock", # for motion_module
         ]
     )
-    unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
-        cfg.lora.use_unet_lora, 
-        denoising_unet, 
-        lora_manager_temporal.unet_replace_modules,
-        cfg.lora.lora_unet_dropout,
-        lora_temp_save_dir, 
-        r=cfg.lora.lora_rank
-    )
 
     net = Net(
         reference_unet,
@@ -624,6 +616,24 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         audioproj,
     ).to(dtype=weight_dtype)
 
+    m,u = net.load_state_dict(
+        torch.load(
+            os.path.join(cfg.audio_ckpt_dir, "net.pth"),
+            map_location="cpu",
+        ),
+    )
+    assert len(m) == 0 and len(u) == 0, "Fail to load correct checkpoint."
+    print("loaded weight from ", os.path.join(cfg.audio_ckpt_dir, "net.pth"))
+
+    unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
+        cfg.lora.use_unet_lora, 
+        denoising_unet, 
+        lora_manager_temporal.unet_replace_modules,
+        cfg.lora.lora_unet_dropout,
+        lora_temp_save_dir, 
+        r=cfg.lora.lora_rank
+    )
+    
     # get noise scheduler
     train_noise_scheduler, val_noise_scheduler = get_noise_scheduler(cfg)
 

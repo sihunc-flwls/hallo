@@ -89,6 +89,8 @@ lora:
   use_unet_lora: True
   lora_rank: 32
   lora_unet_dropout: 0.1
+codebook:
+  attention_dim: 768
 extra_unet_params: {}
 
 base_model_path: "./pretrained_models/stable-diffusion-v1-5/"
