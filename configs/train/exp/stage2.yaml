@@ -99,7 +99,7 @@ face_analysis_model_path: "./pretrained_models/face_analysis"
 audio_ckpt_dir: "./pretrained_models/hallo"
 motion_module_path: "./pretrained_models/motion_module/mm_sd_v15_v2.ckpt"
 
-weight_dtype: "bf16" # [fp16, fp32]
+weight_dtype: "fp16" # [fp16, fp32]
 uncond_img_ratio: 0.05
 uncond_audio_ratio: 0.05
 uncond_ia_ratio: 0.05
