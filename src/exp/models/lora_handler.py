@@ -20,7 +20,16 @@ from exp.models.lora import (
 )
 
 
-FILE_BASENAMES = ['unet', 'text_encoder']
+FILE_BASENAMES = [
+    # 'reference_unet',
+    'denoising_unet', 
+    'face_locator',
+    'reference_control_writer',
+    'reference_control_reader',
+    'imageproj',
+    'audioproj',
+    # 'text_encoder'
+    ]
 LORA_FILE_TYPES = ['.pt', '.safetensors']
 CLONE_OF_SIMO_KEYS = ['model', 'loras', 'target_replace_module', 'r']
 STABLE_LORA_KEYS = ['model', 'target_module', 'search_class', 'r', 'dropout', 'lora_bias']
@@ -245,7 +254,8 @@ class LoraHandler(object):
                 save_lora_weight(model, save_path, replace_modules, flag)
 
         save_lora(
-            model.unet, 
+            # model.unet, 
+            model.denoising_unet, 
             FILE_BASENAMES[0], 
             self.use_unet_lora, 
             self.unet_replace_modules, 
@@ -253,15 +263,15 @@ class LoraHandler(object):
             save_path,
             flag
         )
-        save_lora(
-            model.text_encoder, 
-            FILE_BASENAMES[1], 
-            self.use_text_lora, 
-            self.text_encoder_replace_modules, 
-            step, 
-            save_path,
-            flag
-        )
+        # save_lora(
+        #     model.text_encoder, 
+        #     FILE_BASENAMES[1], 
+        #     self.use_text_lora, 
+        #     self.text_encoder_replace_modules, 
+        #     step, 
+        #     save_path,
+        #     flag
+        # )
 
         # train_patch_pipe(model, self.use_unet_lora, self.use_text_lora)
 
