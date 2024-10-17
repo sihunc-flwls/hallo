@@ -28,7 +28,7 @@ import random
 import time
 import warnings
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import diffusers
 import mlflow
@@ -58,18 +58,20 @@ from exp.models.image_proj import ImageProjModel
 from exp.models.mutual_self_attention import ReferenceAttentionControl
 from exp.models.unet_2d_condition import UNet2DConditionModel
 from exp.models.unet_3d import UNet3DConditionModel
-from exp.utils.util import (compute_snr, delete_additional_ckpt,
-                              import_filename, init_output_dir,
-                              load_checkpoint, save_checkpoint,
-                              seed_everything, tensor_to_video)
+from exp.utils.util import (
+    compute_snr, delete_additional_ckpt,
+    import_filename, init_output_dir,
+    load_checkpoint, save_checkpoint,
+    seed_everything, tensor_to_video
+)
 
 from exp.models.lora_handler import LoraHandler
 from exp.utils.params import (
     param_optim, 
-    create_optim_params, 
-    negate_params, 
+    # create_optim_params, 
+    # negate_params, 
     create_optimizer_params, 
-    handle_trainable_modules,
+    # handle_trainable_modules,
     freeze_params
 )
 
@@ -115,11 +117,11 @@ class Net(nn.Module):
         self,
         reference_unet: UNet2DConditionModel,
         denoising_unet: UNet3DConditionModel,
-        face_locator: FaceLocator,
-        reference_control_writer,
-        reference_control_reader,
-        imageproj,
-        audioproj,
+        face_locator: Optional[FaceLocator] = None,
+        reference_control_writer: Optional[ReferenceAttentionControl] = None,
+        reference_control_reader: Optional[ReferenceAttentionControl] = None,
+        imageproj: Optional[ImageProjModel] = None,
+        audioproj: Optional[AudioProjModel] = None,
     ):
         super().__init__()
         self.reference_unet = reference_unet
@@ -515,7 +517,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     ).to(device="cuda", dtype=weight_dtype)
     denoising_unet = UNet3DConditionModel.from_pretrained_2d(
         cfg.base_model_path,
-        cfg.mm_path,
+        cfg.motion_module_path,
         subfolder="unet",
         unet_additional_kwargs=OmegaConf.to_container(
             cfg.unet_additional_kwargs),
@@ -625,12 +627,14 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     assert len(m) == 0 and len(u) == 0, "Fail to load correct checkpoint."
     print("loaded weight from ", os.path.join(cfg.audio_ckpt_dir, "net.pth"))
 
+    # load LoRA `after' loading the unet checkpoints 
     unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
         cfg.lora.use_unet_lora, 
         denoising_unet, 
         lora_manager_temporal.unet_replace_modules,
         cfg.lora.lora_unet_dropout,
         lora_temp_save_dir, 
+        # lora_temp_save_dir if cfg.resume_from_checkpoint else '', # not used!
         r=cfg.lora.lora_rank
     )
     
@@ -672,13 +676,13 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     ## (default -> extra_unet_params: {})
     extra_unet_params = cfg.extra_unet_params if cfg.extra_unet_params is not None else {}
     extra_text_encoder_params = cfg.extra_unet_params if cfg.extra_unet_params is not None else {}
-
-    trainable_params =[param_optim(
+    trainable_params = create_optimizer_params([param_optim(
         unet_lora_params_temporal,
         cfg.lora.use_unet_lora, 
         is_lora=True,
         extra_params={**{"lr": learning_rate}, **extra_text_encoder_params}
-    )]
+    )], learning_rate)
+
     logger.info(f"Total trainable params {len(trainable_params)}")
     optimizer = optimizer_cls(
         trainable_params,
@@ -775,11 +779,11 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     global_step = 0
     first_epoch = 0
 
-    # # Potentially load in the weights and states from a previous save
-    if cfg.resume_from_checkpoint:
-        logger.info(f"Loading checkpoint from {checkpoint_dir}")
-        global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
-        first_epoch = global_step // num_update_steps_per_epoch
+    # # # Potentially load in the weights and states from a previous save
+    # if cfg.resume_from_checkpoint:
+    #     logger.info(f"Loading checkpoint from {checkpoint_dir}")
+    #     global_step = load_checkpoint(cfg, checkpoint_dir, accelerator)
+    #     first_epoch = global_step // num_update_steps_per_epoch
 
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(
@@ -956,7 +960,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
-                if global_step % cfg.val.validation_steps == 0 or global_step==1:
+                if global_step % cfg.val.validation_steps == 0 or global_step==0:
                     if accelerator.is_main_process:
                         generator = torch.Generator(device=accelerator.device)
                         generator.manual_seed(cfg.seed)
@@ -969,6 +973,7 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                             width=cfg.data.train_width,
                             height=cfg.data.train_height,
                             clip_length=cfg.data.n_sample_frames,
+                            generator=generator,
                             cfg=cfg,
                             save_dir=validation_dir,
                             global_step=global_step,
@@ -999,13 +1004,12 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
                 # save model weight
                 unwrap_net = accelerator.unwrap_model(net)
                 if accelerator.is_main_process:
-                    save_checkpoint(
-                        unwrap_net,
-                        module_dir,
-                        "net",
-                        global_step,
-                        total_limit=30,
-                    )
+                    lora_manager_temporal.save_lora_weights(
+                        model=copy.deepcopy(unwrap_net),
+                        save_path=lora_temp_save_dir,
+                        step=global_step
+                        )
+
             if global_step >= cfg.solver.max_train_steps:
                 break
 

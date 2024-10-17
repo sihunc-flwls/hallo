@@ -547,11 +547,11 @@ def inject_trainable_lora_extended(
                 require_grad_params.append(_module._modules[name].lora_down.parameters())
 
                 if loras != None:
-                    _module._modules[name].lora_up.weight = loras.pop(0)
-                    _module._modules[name].lora_down.weight = loras.pop(0)
+                    _module._modules[name].lora_up.weight = nn.Parameter(loras.pop(0))
+                    _module._modules[name].lora_down.weight = nn.Parameter(loras.pop(0))
 
-                _module._modules[name].lora_up.weight.requires_grad = True
-                _module._modules[name].lora_down.weight.requires_grad = True
+                # _module._modules[name].lora_up.weight.requires_grad = True
+                # _module._modules[name].lora_down.weight.requires_grad = True
                 names.append(name)
     else:
         for _module, name, _child_module in _find_modules(
@@ -640,28 +640,30 @@ def inject_inferable_lora(
     from transformers.models.clip import CLIPTextModel
     from diffusers import UNet3DConditionModel
 
-    def is_text_model(f): return 'text_encoder' in f and isinstance(model.text_encoder, CLIPTextModel)
-    def is_unet(f): return 'unet' in f and model.unet.__class__.__name__ == "UNet3DConditionModel"
-
+    # def is_text_model(f): return 'text_encoder' in f and isinstance(model.text_encoder, CLIPTextModel)
+    # def is_unet(f): return 'unet' in f and model.unet.__class__.__name__ == "UNet3DConditionModel"
+    def is_denoising_unet(f): return 'denoising_unet' in f and isinstance(model.denoising_unet, UNet3DConditionModel)
+    
     if os.path.exists(lora_path):
         try:
             for f in os.listdir(lora_path):
                 if f.endswith('.pt'):
                     lora_file = os.path.join(lora_path, f)
 
-                    if is_text_model(f):
-                        monkeypatch_or_replace_lora(
-                            model.text_encoder,
-                            torch.load(lora_file),
-                            target_replace_module=text_encoder_replace_modules,
-                            r=r
-                        )
-                        print("Successfully loaded Text Encoder LoRa.")
-                        continue
+                    # if is_text_model(f):
+                    #     monkeypatch_or_replace_lora(
+                    #         model.text_encoder,
+                    #         torch.load(lora_file),
+                    #         target_replace_module=text_encoder_replace_modules,
+                    #         r=r
+                    #     )
+                    #     print("Successfully loaded Text Encoder LoRa.")
+                    #     continue
 
-                    if is_unet(f):
+                    # if is_unet(f):
+                    if is_denoising_unet(f):
                         monkeypatch_or_replace_lora_extended(
-                            model.unet,
+                            model.denoising_unet,
                             torch.load(lora_file),
                             target_replace_module=unet_replace_modules,
                             r=r
