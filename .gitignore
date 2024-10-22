@@ -166,7 +166,7 @@ cython_debug/
 .idea/
 .vscode/
 data
-pretrained_models
+pretrained_*
 test_data
 
 _tmp/

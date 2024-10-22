@@ -15,11 +15,21 @@ from . import face_landmark
 
 CUR_DIR = os.path.dirname(__file__)
 
-
 class LMKExtractor():
-    def __init__(self, FPS=25):
+    def __init__(self, FPS=25, dir='./'):
         # Create an FaceLandmarker object.
         self.mode = mp.tasks.vision.FaceDetectorOptions.running_mode.IMAGE
+        # base_options = python.BaseOptions(model_asset_path=os.path.join(CUR_DIR, 'mp_models/face_landmarker_v2_with_blendshapes.task'))
+
+        #_model_asset_path = os.path.join(DIR, 'mp_models/face_landmarker_v2_with_blendshapes.task')
+        #print(f">>> warning! directory is hardcoded: {_model_asset_path}")
+        # if dir=='':
+        #     _model_asset_path=os.path.join(CUR_DIR, 'mp_models/face_landmarker_v2_with_blendshapes.task')
+        # else:
+        #     _model_asset_path=os.path.join(dir, 'mp_models/face_landmarker_v2_with_blendshapes.task')
+        if dir != './':
+            CUR_DIR = dir
+        # base_options = python.BaseOptions(model_asset_path=_model_asset_path)
         base_options = python.BaseOptions(model_asset_path=os.path.join(CUR_DIR, 'mp_models/face_landmarker_v2_with_blendshapes.task'))
         base_options.delegate = mp.tasks.BaseOptions.Delegate.CPU
         options = vision.FaceLandmarkerOptions(base_options=base_options,

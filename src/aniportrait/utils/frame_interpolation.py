@@ -8,10 +8,9 @@ import shutil
 import pdb
 from tqdm import tqdm
 
-def init_frame_interpolation_model():
+def init_frame_interpolation_model(dir="./pretrained_model/film_net_fp16.pt"):
     print("Initializing frame interpolation model")
-    checkpoint_name = os.path.join("./pretrained_model/film_net_fp16.pt")
-
+    checkpoint_name = os.path.join(dir)
     model = torch.jit.load(checkpoint_name, map_location='cpu')
     model.eval()
     model = model.half()

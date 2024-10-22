@@ -37,11 +37,17 @@ Implementation for diffusion based audio-driven talking head generation methods
  - [ ] dataset
     - [ ] data - add clip feature extractor
     - [ ] data - head_pose speed extractor
+- [ ] experiments
+ - [ ] dynamic expression for ReferenceNet
+  - [v] hallo
+  - [v] aniportrait
+  - [ ] EchoMimic
+  - [ ] MegActor-∑
+ - [ ] attention map (audio / motion / spatial)
 - [ ] Personalization
-  - [ ] LoRA (MotionDirector)
-    - [x] set LoRA
-    - [ ] write train code
-  - [ ] Codebook (CyberHost)
+  - [ ] LoRA (ref. MotionDirector)
+    - [ ] set LoRA (temporal - spatial)
+  - [ ] Codebook (ref. CyberHost -> no code!?)
     - [ ] make Codebook
     - [ ] create and inject Codebook attention
     - [ ] write train code
