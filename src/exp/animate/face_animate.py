@@ -40,7 +40,9 @@ from einops import rearrange, repeat
 from tqdm import tqdm
 
 from exp.models.mutual_self_attention import ReferenceAttentionControl
-
+from exp.utils.attention_map import (
+    register_cross_attention_hook,
+)
 
 @dataclass
 class FaceAnimatePipelineOutput(BaseOutput):
@@ -119,6 +121,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         self.ref_image_processor = VaeImageProcessor(
             vae_scale_factor=self.vae_scale_factor, do_convert_rgb=True,
         )
+        self.attn_maps = {}
 
     @property
     def _execution_device(self):
@@ -271,6 +274,7 @@ class FaceAnimatePipeline(DiffusionPipeline):
         callback: Optional[Callable[[
             int, int, torch.FloatTensor], None]] = None,
         callback_steps: Optional[int] = 1,
+        store_attn_map: Optional[bool] = False,
         **kwargs,
     ):
         # Default height and width to unet
@@ -313,6 +317,11 @@ class FaceAnimatePipeline(DiffusionPipeline):
         )
 
         num_channels_latents = self.denoising_unet.in_channels
+
+        if store_attn_map:
+            print("store attn map")
+        #     self.attn_maps = {}
+        #     self.denoising_unet, self.attn_maps = register_cross_attention_hook(self.denoising_unet)
 
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,

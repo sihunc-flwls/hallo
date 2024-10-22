@@ -13,7 +13,10 @@ from typing import Any, Dict, Optional
 import torch
 from einops import rearrange
 
-from exp.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
+from exp.models.attention import (
+    BasicTransformerBlock, 
+    TemporalBasicTransformerBlock
+)
 
 
 def torch_dfs(model: torch.nn.Module):
@@ -306,7 +309,7 @@ class ReferenceAttentionControl:
                     hidden_states = self.ff(self.norm3(
                         hidden_states)) + hidden_states
 
-                    # Temporal-Attention
+                    # Temporal-Attention (not used!)
                     if self.unet_use_temporal_attention:
                         d = hidden_states.shape[1]
                         hidden_states = rearrange(

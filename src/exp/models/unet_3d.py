@@ -170,6 +170,8 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
         audio_attention_dim=768,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        # visualize attention map
+        vis_atttn=False,
     ):
         super().__init__()
 
@@ -251,6 +253,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
                 depth=i,
                 stack_enable_blocks_name=stack_enable_blocks_name,
                 stack_enable_blocks_depth=stack_enable_blocks_depth,
+                vis_atttn=vis_atttn,
             )
             self.down_blocks.append(down_block)
 
@@ -280,6 +283,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
                 depth=3,
                 stack_enable_blocks_name=stack_enable_blocks_name,
                 stack_enable_blocks_depth=stack_enable_blocks_depth,
+                vis_atttn=vis_atttn,
             )
         else:
             raise ValueError(f"unknown mid_block_type : {mid_block_type}")
@@ -339,6 +343,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
                 depth=3-i,
                 stack_enable_blocks_name=stack_enable_blocks_name,
                 stack_enable_blocks_depth=stack_enable_blocks_depth,
+                vis_atttn=vis_atttn,
             )
             self.up_blocks.append(up_block)
             prev_output_channel = output_channel
@@ -724,6 +729,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
         unet_additional_kwargs=None,
         mm_zero_proj_out=False,
         use_landmark=True,
+        vis_atttn=False,
     ):
         """
         Load a pre-trained 2D UNet model from a given directory.
@@ -773,6 +779,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin, PeftAdapterMixin, LoraLoader
         if use_landmark:
             unet_config["in_channels"] = 8
             unet_config["out_channels"] = 8
+        unet_config["vis_atttn"] = vis_atttn
 
         model = cls.from_config(unet_config, **unet_additional_kwargs)
         # load the vanilla weights

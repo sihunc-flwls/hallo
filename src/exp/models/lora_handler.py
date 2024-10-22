@@ -193,6 +193,7 @@ class LoraHandler(object):
             injector_args = lora_loader_args
 
             params, negation = self.lora_injector(**injector_args)  # inject_trainable_lora_extended
+            print('extract')
             for _up, _down in extract_lora_ups_down(
                 model, 
                 target_replace_module=REPLACE_MODULES):

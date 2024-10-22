@@ -360,14 +360,17 @@ def _find_modules_v2(
                 #     continue_flag = False
                 # if 'TransformerTemporalModel' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
                 #     continue_flag = False
-                if 'TemporalTransformerBlock' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
+                if 'TemporalTransformerBlock' in ancestor_class and ('attn1' in fullname or 'ff' in fullname):
                     # blocks used in (motion_module).
                     continue_flag = False
-                if 'TemporalBasicTransformerBlock' in ancestor_class and ('attn1' in fullname or 'attn2' in fullname or 'ff' in fullname):
+                if 'TemporalBasicTransformerBlock' in ancestor_class and ('attn1' in fullname or 'ff' in fullname):
                     # although it is written as Temporal~Block, it is just a spatial-attn! 
                     continue_flag = False
+                    
                 if continue_flag:
                     continue
+
+                print("fullname:", fullname)
                 # Find the direct parent if this is a descendant, not a child, of target
                 *path, name = fullname.split(".")
                 parent = ancestor
@@ -478,11 +481,13 @@ def inject_trainable_lora_extended(
 
     if loras != None:
         loras = torch.load(loras)
+    print('inject')
     if True:
         for target_replace_module_i in target_replace_module:
             for _module, name, _child_module in _find_modules(
                 model, [target_replace_module_i], search_class=[nn.Linear, nn.Conv2d, nn.Conv3d]
             ):
+                print(name)
                 # if name == 'to_q':
                 #     continue
                 if _child_module.__class__ == nn.Linear:
@@ -537,6 +542,7 @@ def inject_trainable_lora_extended(
                     _tmp.conv.weight = weight
                     if bias is not None:
                         _tmp.conv.bias = bias
+                
                 # switch the module
                 _tmp.to(_child_module.weight.device).to(_child_module.weight.dtype)
                 if bias is not None:

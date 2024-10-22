@@ -22,7 +22,7 @@ from .motion_module import get_motion_module
 from .resnet import Downsample3D, ResnetBlock3D, Upsample3D
 from .transformer_3d import Transformer3DModel
 
-
+## apply visAttenProcessor
 def get_down_block(
     down_block_type,
     num_layers,
@@ -52,6 +52,7 @@ def get_down_block(
     depth=0,
     stack_enable_blocks_name=None,
     stack_enable_blocks_depth=None,
+    vis_atttn=False,
 ):
     """
     Factory function to instantiate a down-block module for the 3D UNet architecture.
@@ -163,6 +164,7 @@ def get_up_block(
     depth=0,
     stack_enable_blocks_name=None,
     stack_enable_blocks_depth=None,
+    vis_atttn=False,
 ):
     """
     Factory function to instantiate an up-block module for the 3D UNet architecture.
@@ -308,6 +310,7 @@ class UNetMidBlock3DCrossAttn(nn.Module):
         depth=0,
         stack_enable_blocks_name=None,
         stack_enable_blocks_depth=None,
+        vis_atttn=False,
     ):
         super().__init__()
 

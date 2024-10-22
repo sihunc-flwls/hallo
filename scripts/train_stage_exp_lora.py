@@ -600,14 +600,6 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
         fusion_blocks="full",
     )
 
-    lora_manager_temporal = LoraHandler(
-        use_unet_lora=cfg.lora.use_unet_lora, 
-        unet_replace_modules=[
-            # "TemporalBasicTransformerBlock", # for spatial-attention
-            "TemporalTransformerBlock", # for motion_module
-        ]
-    )
-
     net = Net(
         reference_unet,
         denoising_unet,
@@ -626,6 +618,15 @@ def train_stage2_process(cfg: argparse.Namespace) -> None:
     )
     assert len(m) == 0 and len(u) == 0, "Fail to load correct checkpoint."
     print("loaded weight from ", os.path.join(cfg.audio_ckpt_dir, "net.pth"))
+
+
+    lora_manager_temporal = LoraHandler(
+        use_unet_lora=cfg.lora.use_unet_lora, 
+        unet_replace_modules=[
+            # "TemporalBasicTransformerBlock", # for spatial-attention
+            "TemporalTransformerBlock", # for motion_module
+        ]
+    )
 
     # load LoRA `after' loading the unet checkpoints 
     unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
